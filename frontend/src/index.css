@@ -1,0 +1,54 @@
+@import "tailwindcss";
+@import "./design-system.css";
+
+body {
+  margin: 0;
+  background-color: var(--bg-base);
+  color: var(--fg-primary);
+  font-family: var(--font-sans);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+.highlight-role { 
+  background-color: var(--component-role-bg); 
+  border-bottom: 2px solid var(--component-role); 
+}
+.highlight-context { 
+  background-color: var(--component-context-bg); 
+  border-bottom: 2px solid var(--component-context); 
+}
+.highlight-instruction { 
+  background-color: var(--component-instruction-bg); 
+  border-bottom: 2px solid var(--component-instruction); 
+}
+.highlight-constraint { 
+  background-color: var(--component-constraint-bg); 
+  border-bottom: 2px solid var(--component-constraint); 
+}
+.highlight-example { 
+  background-color: var(--component-example-bg); 
+  border-bottom: 2px solid var(--component-example); 
+}
+.highlight-format { 
+  background-color: var(--component-format-bg); 
+  border-bottom: 2px solid var(--component-format); 
+}
+
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+::-webkit-scrollbar-track {
+  background: var(--bg-base);
+}
+
+::-webkit-scrollbar-thumb {
+  background: var(--border-default);
+  border-radius: var(--radius-full);
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: var(--border-emphasis);
+}

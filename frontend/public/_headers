@@ -1,0 +1,8 @@
+/*.onnx
+  Cache-Control: public, max-age=31536000, immutable
+
+/*.onnx_data
+  Cache-Control: public, max-age=31536000, immutable
+
+/assets/*
+  Cache-Control: public, max-age=31536000, immutable

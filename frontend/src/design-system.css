@@ -1,0 +1,507 @@
+/**
+ * skelica Design System
+ * 
+ * "Design is not just what it looks like. Design is how it works."
+ * 
+ * A minimal, functional design system for AI prompt analysis.
+ * Colors are calibrated for extended use — muted enough to not fatigue,
+ * distinct enough to communicate meaning instantly.
+ */
+
+@layer base {
+:root {
+  /* ==========================================================================
+     DESIGN PRINCIPLES
+     ==========================================================================
+     
+     1. CLARITY OVER CLEVERNESS
+        Every element earns its place. No decoration without purpose.
+     
+     2. FORM FOLLOWS FUNCTION
+        Color communicates meaning. Role is distinct from instruction.
+        Visual hierarchy guides the eye without conscious thought.
+     
+     3. RESTFUL PRECISION
+        Dark enough to reduce eye strain. Light enough to read effortlessly.
+        Colors are muted — saturated enough to distinguish, soft enough for hours.
+     
+     4. INVISIBLE INTERFACE
+        The user thinks about their prompt, not the tool.
+        Transitions are subtle. Feedback is instant. Friction is zero.
+     
+     5. HONEST TYPOGRAPHY
+        System fonts for speed. Clear hierarchy. Generous whitespace.
+        Text is meant to be read, not admired.
+     
+     ==========================================================================
+   */
+
+  /* ==========================================================================
+     COLOR SYSTEM — skelica Identity
+     ==========================================================================
+     
+     Warmer background for approachability.
+     Structural whites (bone-like) for primary text.
+     Alice-blue accent for the "wonderland" reference.
+     
+   ========================================================================== */
+
+  /* Backgrounds — Warmer dark, structural depth */
+  --bg-base: #0c0c12;
+  --bg-surface: #13131a;
+  --bg-elevated: #1a1a22;
+  --bg-hover: #222230;
+  --bg-active: #2a2a36;
+  --bg-muted: #08080c;
+
+  /* Foreground — Bone-like whites */
+  --fg-primary: #d4d4d8;
+  --fg-secondary: #9ca3b0;
+  --fg-tertiary: #6b7280;
+  --fg-muted: #4b5563;
+  --fg-inverse: #0c0c10;
+
+  /* Borders — Subtle separation */
+  --border-default: #252530;
+  --border-subtle: #1e1e28;
+  --border-emphasis: #3a3a48;
+  --border-focus: #5a5a6e;
+
+  /* ==========================================================================
+     PROMPT COMPONENT COLORS
+     ==========================================================================
+     
+     Each component type has a distinct identity.
+     Colors are muted 20-30% from full saturation for comfortable reading.
+     Background variants for highlights use 12-15% opacity.
+     
+   ========================================================================== */
+
+  /* Role — Who the AI should be */
+  --component-role: #60a5fa;
+  --component-role-bg: rgba(96, 165, 250, 0.12);
+  --component-role-border: rgba(96, 165, 250, 0.35);
+
+  /* Context — Background information */
+  --component-context: #a78bfa;
+  --component-context-bg: rgba(167, 139, 250, 0.12);
+  --component-context-border: rgba(167, 139, 250, 0.35);
+
+  /* Instruction — What to do */
+  --component-instruction: #fb923c;
+  --component-instruction-bg: rgba(251, 146, 60, 0.12);
+  --component-instruction-border: rgba(251, 146, 60, 0.35);
+
+  /* Constraint — What not to do / limitations */
+  --component-constraint: #f87171;
+  --component-constraint-bg: rgba(248, 113, 113, 0.12);
+  --component-constraint-border: rgba(248, 113, 113, 0.35);
+
+  /* Example — Sample inputs/outputs */
+  --component-example: #4ade80;
+  --component-example-bg: rgba(74, 222, 128, 0.12);
+  --component-example-border: rgba(74, 222, 128, 0.35);
+
+  /* Format — Output structure specification */
+  --component-format: #22d3ee;
+  --component-format-bg: rgba(34, 211, 238, 0.12);
+  --component-format-border: rgba(34, 211, 238, 0.35);
+
+  /* ==========================================================================
+     SCORE COLORS (0-100)
+     ==========================================================================
+     
+     Gradient from poor to excellent.
+     Each band is a distinct step for instant recognition.
+     
+   ========================================================================== */
+
+  /* Score Bands */
+  --score-excellent: #34d399;
+  --score-excellent-bg: rgba(52, 211, 153, 0.15);
+  --score-good: #a3e635;
+  --score-good-bg: rgba(163, 230, 53, 0.15);
+  --score-fair: #facc15;
+  --score-fair-bg: rgba(250, 204, 21, 0.15);
+  --score-poor: #fb923c;
+  --score-poor-bg: rgba(251, 146, 60, 0.15);
+  --score-bad: #f87171;
+  --score-bad-bg: rgba(248, 113, 113, 0.15);
+
+  /* ==========================================================================
+     SEMANTIC COLORS
+     ========================================================================== */
+
+  --color-success: #4ade80;
+  --color-success-bg: rgba(74, 222, 128, 0.12);
+  --color-warning: #fbbf24;
+  --color-warning-bg: rgba(251, 191, 36, 0.12);
+  --color-error: #f87171;
+  --color-error-bg: rgba(248, 113, 113, 0.12);
+  --color-info: #60a5fa;
+  --color-info-bg: rgba(96, 165, 250, 0.12);
+
+  /* skelica Accent — Alice blue */
+  --skelica-accent: #87CEEB;
+  --skelica-accent-soft: rgba(135, 206, 235, 0.15);
+  --skelica-glow: rgba(135, 206, 235, 0.4);
+
+  /* ==========================================================================
+     TYPOGRAPHY
+     ==========================================================================
+     
+     System font stack for zero network latency.
+     Scale follows 1.25 ratio for harmonious progression.
+     
+   ========================================================================== */
+
+  /* Font Stacks */
+  --font-sans: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', 
+               Roboto, 'Helvetica Neue', Arial, sans-serif;
+  --font-display: 'Space Grotesk', var(--font-sans);
+  --font-mono: ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Monaco, 
+               'Cascadia Code', 'Consolas', monospace;
+
+  /* Font Sizes */
+  --text-xs: 0.75rem;      /* 12px */
+  --text-sm: 0.875rem;     /* 14px */
+  --text-base: 1rem;       /* 16px */
+  --text-lg: 1.125rem;     /* 18px */
+  --text-xl: 1.25rem;      /* 20px */
+  --text-2xl: 1.5rem;      /* 24px */
+  --text-3xl: 1.875rem;    /* 30px */
+  --text-4xl: 2.25rem;     /* 36px */
+  --text-5xl: 3rem;        /* 48px — Score display */
+  --text-6xl: 3.75rem;     /* 60px */
+
+  /* Line Heights */
+  --leading-none: 1;
+  --leading-tight: 1.25;
+  --leading-snug: 1.375;
+  --leading-normal: 1.5;
+  --leading-relaxed: 1.625;
+  --leading-loose: 2;
+
+  /* Font Weights */
+  --font-normal: 400;
+  --font-medium: 500;
+  --font-semibold: 600;
+  --font-bold: 700;
+
+  /* Letter Spacing */
+  --tracking-tight: -0.025em;
+  --tracking-normal: 0;
+  --tracking-wide: 0.025em;
+
+  /* ==========================================================================
+     SPACING SCALE
+     ==========================================================================
+     
+     4px base unit. Predictable. Consistent.
+     Every number is divisible by 4 for pixel-perfect alignment.
+     
+   ========================================================================== */
+
+  --space-0: 0;
+  --space-px: 1px;
+  --space-0_5: 0.125rem;   /* 2px */
+  --space-1: 0.25rem;      /* 4px */
+  --space-1_5: 0.375rem;   /* 6px */
+  --space-2: 0.5rem;       /* 8px */
+  --space-2_5: 0.625rem;   /* 10px */
+  --space-3: 0.75rem;      /* 12px */
+  --space-3_5: 0.875rem;   /* 14px */
+  --space-4: 1rem;         /* 16px */
+  --space-5: 1.25rem;      /* 20px */
+  --space-6: 1.5rem;       /* 24px */
+  --space-7: 1.75rem;      /* 28px */
+  --space-8: 2rem;         /* 32px */
+  --space-9: 2.25rem;      /* 36px */
+  --space-10: 2.5rem;      /* 40px */
+  --space-12: 3rem;        /* 48px */
+  --space-14: 3.5rem;      /* 56px */
+  --space-16: 4rem;        /* 64px */
+  --space-20: 5rem;        /* 80px */
+  --space-24: 6rem;        /* 96px */
+
+  /* ==========================================================================
+     BORDER RADIUS
+     ==========================================================================
+     
+     Soft edges. No sharp corners. No perfect circles (except badges).
+     
+   ========================================================================== */
+
+  --radius-none: 0;
+  --radius-sm: 0.25rem;    /* 4px — Small elements */
+  --radius-default: 0.375rem; /* 6px — Default */
+  --radius-md: 0.5rem;     /* 8px — Buttons, inputs */
+  --radius-lg: 0.75rem;    /* 12px — Cards */
+  --radius-xl: 1rem;       /* 16px — Large cards */
+  --radius-2xl: 1.5rem;    /* 24px — Modals */
+  --radius-full: 9999px;   /* Full — Pills, badges */
+
+  /* ==========================================================================
+     SHADOWS
+     ==========================================================================
+     
+     Subtle elevation. Never dramatic.
+     Shadows exist to separate, not to impress.
+     
+   ========================================================================== */
+
+  --shadow-xs: 0 1px 2px rgba(0, 0, 0, 0.3);
+  --shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.35), 
+               0 1px 2px rgba(0, 0, 0, 0.25);
+  --shadow-default: 0 4px 6px rgba(0, 0, 0, 0.3), 
+                    0 2px 4px rgba(0, 0, 0, 0.2);
+  --shadow-md: 0 6px 12px rgba(0, 0, 0, 0.35), 
+               0 4px 6px rgba(0, 0, 0, 0.25);
+  --shadow-lg: 0 12px 24px rgba(0, 0, 0, 0.4), 
+               0 8px 12px rgba(0, 0, 0, 0.3);
+  --shadow-xl: 0 20px 40px rgba(0, 0, 0, 0.45);
+  --shadow-inner: inset 0 2px 4px rgba(0, 0, 0, 0.4);
+  --shadow-glow: 0 0 20px var(--skelica-glow);
+
+  /* ==========================================================================
+     TRANSITIONS
+     ==========================================================================
+     
+     Fast enough to feel snappy. Slow enough to perceive.
+     No infinite animations. No decorative motion.
+     
+   ========================================================================== */
+
+  --duration-instant: 50ms;
+  --duration-fast: 150ms;
+  --duration-normal: 250ms;
+  --duration-slow: 400ms;
+
+  --ease-default: cubic-bezier(0.4, 0, 0.2, 1);
+  --ease-in: cubic-bezier(0.4, 0, 1, 1);
+  --ease-out: cubic-bezier(0, 0, 0.2, 1);
+  --ease-in-out: cubic-bezier(0.4, 0, 0.2, 1);
+  --ease-spring: cubic-bezier(0.34, 1.56, 0.64, 1);
+
+  /* ==========================================================================
+     Z-INDEX SCALE
+     ========================================================================== */
+
+  --z-base: 0;
+  --z-dropdown: 100;
+  --z-sticky: 200;
+  --z-fixed: 300;
+  --z-modal-backdrop: 400;
+  --z-modal: 500;
+  --z-popover: 600;
+  --z-tooltip: 700;
+  --z-toast: 800;
+
+  /* ==========================================================================
+     LAYOUT TOKENS
+     ========================================================================== */
+
+  --container-xs: 20rem;    /* 320px */
+  --container-sm: 24rem;    /* 384px */
+  --container-md: 28rem;    /* 448px */
+  --container-lg: 32rem;    /* 512px */
+  --container-xl: 36rem;    /* 576px */
+  --container-2xl: 42rem;   /* 672px */
+  --container-3xl: 48rem;   /* 768px */
+  --container-4xl: 56rem;   /* 896px */
+  --container-5xl: 64rem;   /* 1024px */
+  --container-6xl: 72rem;   /* 1152px */
+  --container-7xl: 80rem;   /* 1280px */
+
+  --input-height: 2.75rem;  /* 44px */
+  --button-height: 2.75rem; /* 44px */
+  --header-height: 4rem;    /* 64px */
+
+  /* ==========================================================================
+     COMPONENT TOKENS
+     ========================================================================== */
+
+  /* Button */
+  --btn-height: var(--button-height);
+  --btn-padding-x: var(--space-5);
+  --btn-padding-y: var(--space-2_5);
+  --btn-radius: var(--radius-md);
+  --btn-bg: var(--bg-elevated);
+  --btn-bg-hover: var(--bg-hover);
+  --btn-bg-active: var(--bg-active);
+  --btn-border: var(--border-default);
+  --btn-text: var(--fg-primary);
+
+  /* Input */
+  --input-height: var(--input-height);
+  --input-padding-x: var(--space-4);
+  --input-padding-y: var(--space-3);
+  --input-radius: var(--radius-md);
+  --input-bg: var(--bg-surface);
+  --input-border: var(--border-default);
+  --input-focus-ring: var(--border-focus);
+  --input-placeholder: var(--fg-muted);
+
+  /* Card */
+  --card-bg: var(--bg-surface);
+  --card-border: var(--border-subtle);
+  --card-radius: var(--radius-lg);
+  --card-padding: var(--space-6);
+
+  /* Badge */
+  --badge-height: 1.5rem;
+  --badge-padding-x: var(--space-2);
+  --badge-radius: var(--radius-full);
+  --badge-text: var(--text-xs);
+  --badge-weight: var(--font-medium);
+
+  /* Tooltip */
+  --tooltip-bg: var(--bg-elevated);
+  --tooltip-border: var(--border-default);
+  --tooltip-radius: var(--radius-md);
+  --tooltip-padding: var(--space-2) var(--space-3);
+  --tooltip-text: var(--text-sm);
+}
+} /* @layer base */
+
+/* ==========================================================================
+   ANIMATIONS
+   ========================================================================== */
+
+/* Glitch effect for logo */
+@keyframes glitch {
+  0%, 100% {
+    opacity: 1;
+    transform: translateX(0);
+    filter: none;
+  }
+  92% {
+    opacity: 1;
+    transform: translateX(0);
+  }
+  93% {
+    opacity: 0.8;
+    transform: translateX(2px);
+    filter: drop-shadow(2px 0 var(--skelica-accent));
+  }
+  94% {
+    opacity: 1;
+    transform: translateX(0);
+    filter: none;
+  }
+  96% {
+    opacity: 0.9;
+    transform: translateX(-1px);
+    filter: drop-shadow(-2px 0 var(--component-role));
+  }
+  97% {
+    opacity: 1;
+    transform: translateX(0);
+    filter: none;
+  }
+}
+
+@keyframes subtle-pulse {
+  0%, 100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.85;
+  }
+}
+
+@keyframes float {
+  0%, 100% {
+    transform: translateY(0);
+  }
+  50% {
+    transform: translateY(-4px);
+  }
+}
+
+/* ==========================================================================
+   DARK MODE DEFAULT
+   ========================================================================== 
+
+   skelica is designed for dark mode. No light mode toggle.
+   The dark theme is the identity, not an option.
+
+ ========================================================================== */
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    color-scheme: dark;
+  }
+}
+
+/* ==========================================================================
+   ACCESSIBILITY
+   ========================================================================== 
+
+   Focus states are visible. Contrast meets WCAG AA.
+   Animations respect user preferences.
+
+ ========================================================================== */
+
+@media (prefers-reduced-motion: reduce) {
+  :root {
+    --duration-fast: 0ms;
+    --duration-normal: 0ms;
+    --duration-slow: 0ms;
+  }
+  
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}
+
+/* Focus ring utility */
+:focus-visible {
+  outline: 2px solid var(--border-focus);
+  outline-offset: 2px;
+}
+
+/* ==========================================================================
+   UTILITIES
+   ========================================================================== */
+
+.animate-glitch {
+  animation: glitch 5s infinite;
+}
+
+.animate-subtle-pulse {
+  animation: subtle-pulse 2s ease-in-out infinite;
+}
+
+.animate-float {
+  animation: float 3s ease-in-out infinite;
+}
+
+/* Input glow on focus */
+.input-glow:focus-within {
+  box-shadow: 0 0 0 3px var(--skelica-accent-soft),
+              0 0 20px var(--skelica-glow);
+}
+
+/* ==========================================================================
+   TAILWIND INTEGRATION
+   ========================================================================== 
+
+   These variables are ready to use with Tailwind's @apply or arbitrary values:
+   
+   Example usage:
+   
+   .btn-primary {
+     @apply bg-[var(--btn-bg)] text-[var(--btn-text)] px-[var(--btn-padding-x)];
+   }
+   
+   .highlight-role {
+     background-color: var(--component-role-bg);
+     border-bottom: 2px solid var(--component-role);
+   }
+
+ ========================================================================== */

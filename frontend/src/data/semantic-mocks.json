@@ -1,0 +1,7 @@
+{
+  "S1": { "role": 0.05, "context": 0.85, "instruction": 0.35, "constraint": 0.1, "example": 0.05, "format": 0.1, "audience": 0.1, "tone": 0.1 },
+  "S2": { "role": 0.02, "context": 0.2, "instruction": 0.9, "constraint": 0.1, "example": 0.05, "format": 0.1, "audience": 0.4, "tone": 0.2 },
+  "S3": { "role": 0.05, "context": 0.7, "instruction": 0.8, "constraint": 0.8, "example": 0.05, "format": 0.1, "audience": 0.4, "tone": 0.3 },
+  "S11": { "role": 0.8, "context": 0.95, "instruction": 0.9, "constraint": 0.85, "example": 0.9, "format": 0.8, "audience": 0.7, "tone": 0.75 },
+  "P1": { "role": 0.9, "context": 0.85, "instruction": 0.9, "constraint": 0.8, "example": 0.75, "format": 0.85, "audience": 0.6, "tone": 0.4 }
+}
