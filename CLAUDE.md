@@ -17,12 +17,15 @@ npm run dev              # Vite dev server → http://localhost:5173
 npm run build            # TypeScript check + Vite production build → dist/
 npm test                 # Vitest (watch mode)
 npm run test:prompts     # Regression tests — core tier (11 prompts)
+npm run test:e2e         # Browser E2E via agent-browser (requires app running)
 npm run lint             # ESLint
 npm run i18n:ci          # i18n key validation
-npm run preview          # Preview production build
+npm run preview          # Preview production build → http://localhost:4173
 ```
 
 For full regression suite: `TEST_TIER=full npm run test:prompts`
+
+E2E against production: `bash scripts/e2e.sh https://skelica.pages.dev`
 
 ## Architecture
 
@@ -76,6 +79,21 @@ The results section renders in a two-step staggered reveal (Framer Motion `stagg
 - **i18n:** Use `t('key')` from `i18n.ts` — never hardcode UI strings. Supports en/pt/es.
 - **TypeScript:** Strict mode with `noUnusedLocals`, `noUnusedParameters`
 - **Testing:** Vitest. Regression data in `data/validation-prompts.json`.
+
+## E2E Testing
+
+Browser smoke tests live in `scripts/e2e.sh` and use `agent-browser` CLI.
+
+Key `data-testid` attributes (do not rename without updating `e2e.sh`):
+- `prompt-input` — main textarea
+- `analyze-button` — Analyze button
+- `grade` — score letter in ScoreCard
+- `anatomy-view` — AnatomyView root
+- `components-checklist` — ComponentsChecklist root
+
+CI layers:
+- **`e2e.yml`** — runs on PRs against `vite preview` (blocking gate)
+- **`deploy.yml` → smoke job** — runs post-deploy against `skelica.pages.dev` (informative, `continue-on-error`)
 
 ## Sensitive Areas
 

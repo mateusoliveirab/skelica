@@ -35,38 +35,40 @@ Paste any prompt and Skelica will:
 
 ```
 skelica/
-├── docs/                  # Documentação do projeto
-│   ├── design/            # Briefs de design
-│   ├── migration/         # Migrações
-│   ├── project/           # Status e planejamento
-│   ├── testing/           # Casos de teste e validação
-│   ├── translation/       # Governança de tradução
-│   ├── api/               # Documentação de APIs
-│   └── frontend/          # Especificações do frontend
-└── frontend/
-    ├── src/
-    │   ├── App.tsx               # Main application
-    │   ├── components/
-    │   │   ├── PromptInput.tsx   # Text input with actions
-    │   │   ├── AnatomyView.tsx   # Highlighted prompt display
-    │   │   ├── ScoreCard.tsx     # Quality score visualization
-    │   │   └── ComponentsChecklist.tsx  # Component grid
-    │   ├── core/
-    │   │   ├── anatomyParser.ts  # Prompt anatomy detection
-    │   │   ├── scorer.ts         # Quality scoring engine
-    │   │   └── patterns.ts       # Multilingual pattern loading
-    │   ├── llm/
-    │   │   ├── openaiClient.ts   # OpenAI integration
-    │   │   ├── anthropicClient.ts # Anthropic integration
-    │   │   └── factory.ts        # LLM client factory
-    │   ├── hooks/
-    │   │   └── usePromptAnalysis.ts  # Analysis state management
-    │   ├── data/
-    │   │   ├── templates.ts      # Prompt templates
-    │   │   └── components.ts     # Component information
-    │   └── api/
-    │       └── types.ts          # TypeScript types
-    └── package.json
+├── .github/
+│   └── workflows/
+│       ├── deploy.yml     # Deploy to Cloudflare Pages on push to main
+│       ├── iac.yml        # Terraform IaC (manual trigger)
+│       └── e2e.yml        # Browser E2E gate on PRs
+├── docs/                  # Project documentation
+│   ├── design/            # Design briefs
+│   ├── project/           # Status and planning
+│   ├── testing/           # Test cases and validation datasets
+│   ├── translation/       # i18n governance
+│   └── frontend/          # Frontend specs
+├── frontend/
+│   ├── src/
+│   │   ├── App.tsx               # Main application
+│   │   ├── components/
+│   │   │   ├── PromptInput.tsx   # Text input with actions
+│   │   │   ├── AnatomyView.tsx   # Highlighted prompt display
+│   │   │   ├── ScoreCard.tsx     # Quality score visualization
+│   │   │   └── ComponentsChecklist.tsx  # Component grid
+│   │   ├── core/
+│   │   │   ├── anatomyParser.ts  # Prompt anatomy detection
+│   │   │   ├── scorer.ts         # Quality scoring engine
+│   │   │   └── patterns.ts       # Multilingual pattern loading
+│   │   ├── llm/
+│   │   │   ├── openaiClient.ts   # OpenAI integration
+│   │   │   ├── anthropicClient.ts # Anthropic integration
+│   │   │   └── factory.ts        # LLM client factory
+│   │   └── hooks/
+│   │       └── usePromptAnalysis.ts  # Analysis orchestration
+│   └── package.json
+├── iac/                   # Terraform — Cloudflare Pages project
+├── scripts/
+│   └── e2e.sh             # Browser E2E script (agent-browser)
+└── glossary/              # Multilingual term glossary
 ```
 
 ## Quick Start
@@ -79,7 +81,7 @@ skelica/
 ### Setup
 
 ```bash
-cd skelica/frontend
+cd frontend
 
 # Install dependencies
 npm install
@@ -111,25 +113,13 @@ cp .env.example .env
 
 ## Deployment
 
-Skelica is a static web application that can be deployed to any static hosting service:
+Deployed to **Cloudflare Pages** at https://skelica.pages.dev via GitHub Actions.
 
-### Vercel
+Push to `main` with changes in `frontend/**` triggers `deploy.yml` automatically.
 
-```bash
-npm run build
-vercel deploy
-```
+Required GitHub secrets: `CLOUDFLARE_API_TOKEN` (Pages:Edit), `CLOUDFLARE_ACCOUNT_ID`.
 
-### Netlify
-
-```bash
-npm run build
-netlify deploy --prod
-```
-
-### GitHub Pages
-
-Push to your repository and the GitHub Actions workflow will automatically deploy.
+IaC for the Cloudflare Pages project lives in `iac/` and is managed via `iac.yml` (manual trigger).
 
 ## Prompt Components Detected
 
@@ -171,29 +161,26 @@ Language is auto-detected based on prompt content, with English as fallback.
 ### Run Tests
 
 ```bash
-cd skelica/frontend
-npm test
+cd frontend
+npm test                          # Vitest unit tests (watch)
+npm run test:prompts              # Regression: core tier (11 prompts)
+TEST_TIER=full npm run test:prompts  # Regression: full tier (26 prompts)
+npm run test:e2e                  # Browser E2E via agent-browser (needs app running)
 ```
 
-### Run Prompt Validation Tests
-
-Regression tests for prompt analysis (component detection + scoring):
-
+Browser E2E against production:
 ```bash
-cd skelica/frontend
-npm run test:prompts
+bash scripts/e2e.sh https://skelica.pages.dev
 ```
 
-See [docs/testing/regression-prompts.md](./docs/testing/regression-prompts.md) for details.
+See [docs/testing/regression-prompts.md](./docs/testing/regression-prompts.md) for regression details.
 
 ### Build for Production
 
 ```bash
-cd skelica/frontend
-npm run build
+cd frontend && npm run build
+# Output: frontend/dist/
 ```
-
-The build output will be in `frontend/dist/` and can be deployed to any static hosting service.
 
 ## Documentation
 
