@@ -76,6 +76,7 @@ export const AnatomyView = React.memo(function AnatomyView({ prompt, components,
 
   return (
     <motion.div
+      data-testid="anatomy-view"
       initial={{ opacity: 0, y: 20 }}
       animate={{ opacity: 1, y: 0 }}
       className="bg-[var(--bg-surface)] border border-[var(--border-subtle)] rounded-xl p-6 backdrop-blur-sm shadow-xl"

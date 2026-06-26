@@ -28,6 +28,7 @@ export const ScoreCard = React.memo(function ScoreCard({ score }: ScoreCardProps
 
   return (
     <motion.div
+      data-testid="score-card"
       initial={{ opacity: 0, y: 20 }}
       animate={{ opacity: 1, y: 0 }}
       className="flex flex-col p-6 relative overflow-hidden"
@@ -66,6 +67,7 @@ export const ScoreCard = React.memo(function ScoreCard({ score }: ScoreCardProps
             transition={{ type: 'spring', stiffness: 260, damping: 18, delay: 0.3 }}
             className="relative z-10 text-7xl font-black tracking-tighter leading-none"
             style={{ color: gradeColor, textShadow: `0 0 28px ${gradeColor}50` }}
+            data-testid="grade"
           >
             {score.grade}
           </motion.span>

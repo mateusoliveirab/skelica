@@ -45,9 +45,10 @@ export function PromptInput({ value, onChange, onAnalyze, loading }: PromptInput
           onChange={(e) => onChange(e.target.value)}
           onFocus={() => setIsFocused(true)}
           onBlur={() => setIsFocused(false)}
+          data-testid="prompt-input"
           placeholder={t('prompt_placeholder')}
-          className="w-full h-48 md:h-56 bg-transparent p-6 text-[var(--fg-primary)] 
-                   placeholder-[var(--fg-muted)] resize-none focus:outline-none 
+          className="w-full h-48 md:h-56 bg-transparent p-6 text-[var(--fg-primary)]
+                   placeholder-[var(--fg-muted)] resize-none focus:outline-none
                    font-mono text-sm leading-relaxed"
           style={{
             minHeight: '12rem'
@@ -127,6 +128,7 @@ export function PromptInput({ value, onChange, onAnalyze, loading }: PromptInput
 
         {/* Right side - Primary action */}
         <motion.button
+          data-testid="analyze-button"
           whileHover={{ scale: 1.02, boxShadow: '0 0 30px var(--skelica-glow)' }}
           whileTap={{ scale: 0.98 }}
           onClick={onAnalyze}

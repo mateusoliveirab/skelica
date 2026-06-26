@@ -27,6 +27,7 @@ export const ComponentsChecklist = React.memo(function ComponentsChecklist({ com
 
   return (
     <motion.div
+      data-testid="components-checklist"
       initial={{ opacity: 0, y: 20 }}
       animate={{ opacity: 1, y: 0 }}
       className="flex flex-col p-6 relative"
