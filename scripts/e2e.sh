@@ -42,14 +42,14 @@ agent-browser screenshot "$SCREENSHOT_DIR/01-load.png"
 
 # Validate textarea is present and has the demo prompt content
 PROMPT_TEXT=$(agent-browser eval \
-  "document.querySelector('[data-testid=\"prompt-input\"]')?.value ?? ''" \
+  "var el=document.querySelector('[data-testid=\"prompt-input\"]'); el ? el.value : ''" \
   --timeout "$TIMEOUT")
 [ -z "$PROMPT_TEXT" ] && fail "prompt-input not found or empty on load"
 log "Default prompt loaded (${#PROMPT_TEXT} chars)"
 
 # Validate Analyze button is enabled
 BUTTON_DISABLED=$(agent-browser eval \
-  "document.querySelector('[data-testid=\"analyze-button\"]')?.disabled ?? 'missing'" \
+  "var el=document.querySelector('[data-testid=\"analyze-button\"]'); el ? String(el.disabled) : 'missing'" \
   --timeout "$TIMEOUT")
 [ "$BUTTON_DISABLED" = "true" ] && fail "analyze-button is disabled on load"
 [ "$BUTTON_DISABLED" = "missing" ] && fail "analyze-button not found"
@@ -64,7 +64,7 @@ agent-browser wait '[data-testid="grade"]' --timeout "$TIMEOUT"
 agent-browser screenshot "$SCREENSHOT_DIR/03-results.png"
 
 GRADE=$(agent-browser eval \
-  "document.querySelector('[data-testid=\"grade\"]')?.textContent?.trim() ?? ''" \
+  "var el=document.querySelector('[data-testid=\"grade\"]'); el ? el.textContent.trim() : ''" \
   --timeout "$TIMEOUT")
 [[ ! "$GRADE" =~ ^[A-F][+-]?$ ]] && fail "grade is not a valid letter grade: '$GRADE'"
 log "Grade: $GRADE"
@@ -88,7 +88,7 @@ agent-browser eval \
   --timeout "$TIMEOUT"
 
 BUTTON_DISABLED=$(agent-browser eval \
-  "document.querySelector('[data-testid=\"analyze-button\"]')?.disabled ?? 'missing'" \
+  "var el=document.querySelector('[data-testid=\"analyze-button\"]'); el ? String(el.disabled) : 'missing'" \
   --timeout "$TIMEOUT")
 [ "$BUTTON_DISABLED" != "true" ] && fail "analyze-button should be disabled when input is empty"
 log "Empty input correctly disables Analyze button"
