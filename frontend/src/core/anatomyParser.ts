@@ -692,29 +692,25 @@ export class AnatomyParser {
       );
 
       if (!isCovered) {
-        // Find best match in semantic scores for THIS specific sentence
+        // Find best match in semantic scores for THIS specific sentence.
+        // `scores` is already keyed by component id (see core/semanticClassifier.ts /
+        // core/worker.ts) — no label-string translation needed here.
         const scores = sentenceMap[sentence] || sentenceMap['__FULL_PROMPT__'] || {};
-        
-        const semanticToComponentMap: Record<string, PromptComponentType> = {
-          'instruction': 'instruction',
-          'context': 'context',
-          'role': 'role',
-          'constraint or rule': 'constraint', // Map from semantic labels
-          'negative constraint': 'negative_constraint',
-          'example': 'example',
-          'output_format': 'format',
-          'target audience': 'audience',
-          'tone or style': 'tone'
-        };
 
         let bestType: PromptComponentType | null = null;
-        let bestScore = 0.60;
+        // Calibrated empirically for ADR-0001's cosine-similarity scores, not the old NLI
+        // entailment-probability scale. Neutral filler text ("Thanks in advance for your
+        // help...") still scores up to ~0.89 top-1 against these labels, overlapping true
+        // positives (~0.88-0.96) — there is no clean separating threshold. 0.90 is chosen to
+        // bias toward precision: this layer only reinforces regex-uncovered spans, so a missed
+        // detection just falls back to regex-only (safe), while a false positive actively
+        // mislabels neutral text as a component.
+        let bestScore = 0.90;
 
-        for (const [semLabel, score] of Object.entries(scores)) {
-          const compType = semanticToComponentMap[semLabel];
-          if (compType && score > bestScore) {
+        for (const [compType, score] of Object.entries(scores)) {
+          if (score > bestScore) {
             bestScore = score;
-            bestType = compType;
+            bestType = compType as PromptComponentType;
           }
         }
 
