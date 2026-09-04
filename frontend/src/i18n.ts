@@ -78,6 +78,7 @@ const EN: Translations = {
   open_claude: "Open Claude",
   open_chatgpt: "Open ChatGPT",
   copy_prompt: "Copy prompt",
+  prompt_copied_paste_notice: "Prompt copied — paste it in the chat that just opened",
 
   // Error Boundary
   error_boundary_title: "Something went wrong",

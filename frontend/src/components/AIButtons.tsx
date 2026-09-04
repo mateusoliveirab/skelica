@@ -54,14 +54,48 @@ Prompt original:
 ${basePrompt}`;
 }
 
+interface Provider {
+  id: string;
+  labelKey: 'open_claude' | 'open_chatgpt';
+  iconSrc: string;
+  iconAlt: string;
+  // Chat URL that accepts a `?q=` prefill param, without the trailing query string.
+  baseUrl: string;
+}
+
+const PROVIDERS: Provider[] = [
+  { id: 'claude', labelKey: 'open_claude', iconSrc: '/icons/claude.svg', iconAlt: 'Claude', baseUrl: 'https://claude.ai/new' },
+  // chatgpt.com is the canonical domain; chat.openai.com 308-redirects here, so linking directly
+  // skips that extra hop.
+  { id: 'chatgpt', labelKey: 'open_chatgpt', iconSrc: '/icons/openai.svg', iconAlt: 'ChatGPT', baseUrl: 'https://chatgpt.com/' },
+];
+
+// Past this length, prefilling the URL risks silent truncation by an intermediate proxy, CDN, or
+// the destination's own router — well under real browser limits, but common infra caps sit lower.
+// Above it we copy the prompt and open a blank chat instead of gambling on a broken deep link.
+const SAFE_URL_PROMPT_LENGTH = 6000;
+
 export function AIButtons({ prompt, analysis }: AIButtonsProps) {
   const [copied, setCopied] = useState(false);
+  const [handoffCopiedFor, setHandoffCopiedFor] = useState<string | null>(null);
 
   const enhancedPrompt = generateEnhancedPrompt(prompt, analysis);
   const promptToUse = analysis ? enhancedPrompt : prompt;
+  const isTooLongForUrl = promptToUse.length > SAFE_URL_PROMPT_LENGTH;
 
-  const openProvider = (url: string) => {
-    window.open(url, '_blank', 'noopener,noreferrer');
+  const openProvider = async (provider: Provider) => {
+    if (isTooLongForUrl) {
+      try {
+        await navigator.clipboard.writeText(promptToUse);
+        setHandoffCopiedFor(provider.id);
+        setTimeout(() => setHandoffCopiedFor(null), 2500);
+      } catch {
+        // Clipboard denied — still open the provider so the user isn't stuck with a dead button.
+      }
+      window.open(provider.baseUrl, '_blank', 'noopener,noreferrer');
+      return;
+    }
+    window.open(`${provider.baseUrl}?q=${encodeURIComponent(promptToUse)}`, '_blank', 'noopener,noreferrer');
   };
 
   const handleCopy = async () => {
@@ -77,53 +111,36 @@ export function AIButtons({ prompt, analysis }: AIButtonsProps) {
 
   if (!prompt.trim()) return null;
 
-  const encodedPrompt = encodeURIComponent(promptToUse);
-
   return (
     <div className="flex items-center gap-2">
-      <motion.button
-        whileHover={{ scale: 1.05, y: -2 }}
-        whileTap={{ scale: 0.95 }}
-        onClick={() => openProvider(`https://claude.ai/new?q=${encodedPrompt}`)}
-        className="
-          w-10 h-10 rounded-lg
-          bg-[var(--bg-elevated)] border border-[var(--border-default)]
-          flex items-center justify-center
-          hover:border-[var(--border-emphasis)]
-          transition-all duration-200
-          focus:outline-none focus:ring-2 focus:ring-[var(--skelica-accent)] focus:ring-offset-2 focus:ring-offset-[var(--bg-base)]
-        "
-        aria-label={t('open_claude')}
-        title={t('open_claude')}
-      >
-        <img 
-          src="/icons/claude.svg" 
-          alt="Claude" 
-          className="w-5 h-5"
-        />
-      </motion.button>
-
-      <motion.button
-        whileHover={{ scale: 1.05, y: -2 }}
-        whileTap={{ scale: 0.95 }}
-        onClick={() => openProvider(`https://chat.openai.com/?q=${encodedPrompt}`)}
-        className="
-          w-10 h-10 rounded-lg
-          bg-[var(--bg-elevated)] border border-[var(--border-default)]
-          flex items-center justify-center
-          hover:border-[var(--border-emphasis)]
-          transition-all duration-200
-          focus:outline-none focus:ring-2 focus:ring-[var(--skelica-accent)] focus:ring-offset-2 focus:ring-offset-[var(--bg-base)]
-        "
-        aria-label={t('open_chatgpt')}
-        title={t('open_chatgpt')}
-      >
-        <img 
-          src="/icons/openai.svg" 
-          alt="ChatGPT" 
-          className="w-5 h-5"
-        />
-      </motion.button>
+      {PROVIDERS.map((provider) => {
+        const justCopiedForHandoff = handoffCopiedFor === provider.id;
+        const label = justCopiedForHandoff ? t('prompt_copied_paste_notice') : t(provider.labelKey);
+        return (
+          <motion.button
+            key={provider.id}
+            whileHover={{ scale: 1.05, y: -2 }}
+            whileTap={{ scale: 0.95 }}
+            onClick={() => openProvider(provider)}
+            className="
+              w-10 h-10 rounded-lg
+              bg-[var(--bg-elevated)] border border-[var(--border-default)]
+              flex items-center justify-center
+              hover:border-[var(--border-emphasis)]
+              transition-all duration-200
+              focus:outline-none focus:ring-2 focus:ring-[var(--skelica-accent)] focus:ring-offset-2 focus:ring-offset-[var(--bg-base)]
+            "
+            aria-label={label}
+            title={label}
+          >
+            {justCopiedForHandoff ? (
+              <Check className="w-4 h-4 text-[var(--color-success)]" />
+            ) : (
+              <img src={provider.iconSrc} alt={provider.iconAlt} className="w-5 h-5" />
+            )}
+          </motion.button>
+        );
+      })}
 
       <motion.button
         whileHover={{ scale: 1.05, y: -2 }}
