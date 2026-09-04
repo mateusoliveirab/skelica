@@ -6,7 +6,7 @@ resource "cloudflare_pages_project" "main" {
   build_config = {
     build_command   = "npm run build"
     destination_dir = "dist"
-    root_dir        = "skelica/frontend"
+    root_dir        = "frontend"
     build_caching   = true
   }
 
@@ -15,7 +15,7 @@ resource "cloudflare_pages_project" "main" {
 
     config = {
       owner                          = var.github_owner
-      repo_name                      = "workbench"
+      repo_name                      = "skelica"
       production_branch              = "main"
       pr_comments_enabled            = true
       production_deployments_enabled = true
