@@ -1,32 +1,12 @@
 /**
- * SemanticClassifier - Zero-shot classification of prompt components
+ * SemanticClassifier - embedding-similarity classification of prompt components (ADR-0001)
  * Offloads Transformers.js inference to a Web Worker to prevent UI blocking.
+ * The worker already returns scores keyed by component id (see core/worker.ts) — no
+ * label-text-to-component mapping is needed here, which also removes the risk of a
+ * language's labels silently missing from that mapping.
  */
 
 export type SemanticComponents = Record<string, number>;
-
-const COMPONENT_MAP: Record<string, string> = {
-  // English
-  'role definition': 'role',
-  'background context': 'context',
-  'task instruction': 'instruction',
-  'constraint or rule': 'constraint',
-  'negative constraint': 'negative_constraint',
-  'example': 'example',
-  'output_format': 'format',
-  'target audience': 'audience',
-  'tone or style': 'tone',
-  // Portuguese
-  'definição de papel ou persona': 'role',
-  'contexto ou informações de fundo': 'context',
-  'instrução ou comando de tarefa': 'instruction',
-  'restrição ou regra': 'constraint',
-  'restrição negativa ou o que evitar': 'negative_constraint',
-  'exemplo ou amostra': 'example',
-  'formato de saída': 'format',
-  'público-alvo': 'audience',
-  'tom ou estilo de escrita': 'tone',
-};
 
 // Internal state
 let worker: Worker | null = null;
@@ -77,7 +57,7 @@ function getWorker(): Worker {
 /**
  * Send a classification request to the worker
  */
-function classifyWithWorker(texts: string[], language: 'en' | 'pt'): Promise<any[]> {
+function classifyWithWorker(texts: string[], language: 'en' | 'pt' | 'es'): Promise<any[]> {
   return new Promise((resolve, reject) => {
     try {
       const w = getWorker();
@@ -100,7 +80,7 @@ const sentenceCache = new Map<string, SemanticComponents>();
  */
 async function performClassification(
   input: string | string[], 
-  language: 'en' | 'pt' = 'en'
+  language: 'en' | 'pt' | 'es' = 'en'
 ): Promise<SemanticComponents | SemanticComponents[]> {
   const inputs = Array.isArray(input) ? input : [input];
   if (inputs.length === 0) return [];
@@ -121,22 +101,12 @@ async function performClassification(
   // 2. Process only new sentences in batch via Worker
   if (toProcess.length > 0) {
     const batchTexts = toProcess.map(p => p.text);
-    
-    // Offload to worker instead of blocking main thread
-    const batchResults = await classifyWithWorker(batchTexts, language);
-    const outputs = Array.isArray(batchResults) ? batchResults : [batchResults];
 
-    outputs.forEach((output: any, i: number) => {
-      const scores: SemanticComponents = {};
-      if (output.labels && output.scores) {
-        output.labels.forEach((label: string, j: number) => {
-          const comp = COMPONENT_MAP[label];
-          if (comp !== undefined) {
-            scores[comp] = output.scores[j];
-          }
-        });
-      }
-      
+    // Offload to worker instead of blocking main thread.
+    // The worker returns one Record<component, similarityScore> per input text already.
+    const outputs = await classifyWithWorker(batchTexts, language) as SemanticComponents[];
+
+    outputs.forEach((scores: SemanticComponents, i: number) => {
       const originalIndex = toProcess[i].index;
       results[originalIndex] = scores;
       sentenceCache.set(`${language}:${toProcess[i].text}`, scores);

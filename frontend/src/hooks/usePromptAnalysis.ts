@@ -54,7 +54,7 @@ export function usePromptAnalysis() {
       try {
         const parser = getAnatomyParser();
         // @ts-ignore - accessing private method for pre-detection
-        const detectedLang = parser.detectLanguage(trimmedPrompt) as 'en' | 'pt';
+        const detectedLang = parser.detectLanguage(trimmedPrompt) as 'en' | 'pt' | 'es';
 
         // Break into sentences for granular AI analysis
         const sentences = trimmedPrompt
