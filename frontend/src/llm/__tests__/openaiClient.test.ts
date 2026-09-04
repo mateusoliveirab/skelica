@@ -3,8 +3,12 @@
  */
 
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { OpenAIClient } from '../openaiClient';
+import { OpenAIClient, DEFAULT_MODEL } from '../openaiClient';
 import { LLMApiError } from '../errors';
+
+function structuredContent(optimizedPrompt: string, componentsForSuggestions: string[] = []): string {
+  return JSON.stringify({ optimizedPrompt, componentsForSuggestions });
+}
 
 // Mock the OpenAI SDK
 vi.mock('openai', () => {
@@ -39,7 +43,7 @@ describe('OpenAIClient', () => {
 
   beforeEach(async () => {
     vi.clearAllMocks();
-    
+
     client = new OpenAIClient('sk-test-key-123');
     mockCreate = client['client'].chat.completions.create as ReturnType<typeof vi.fn>;
   });
@@ -54,6 +58,16 @@ describe('OpenAIClient', () => {
       expect(testClient).toBeDefined();
       expect(testClient['client']).toBeDefined();
     });
+
+    it('should default to DEFAULT_MODEL when no model is given', () => {
+      const testClient = new OpenAIClient('sk-test-key');
+      expect(testClient['model']).toBe(DEFAULT_MODEL);
+    });
+
+    it('should accept a model override', () => {
+      const testClient = new OpenAIClient('sk-test-key', 'gpt-4.1-mini');
+      expect(testClient['model']).toBe('gpt-4.1-mini');
+    });
   });
 
   describe('optimizePrompt', () => {
@@ -61,7 +75,10 @@ describe('OpenAIClient', () => {
       const mockResponse = {
         choices: [{
           message: {
-            content: 'You are a senior software engineer with expertise in Python. Write a well-documented function that sorts a list of numbers using merge sort algorithm.'
+            content: structuredContent(
+              'You are a senior software engineer with expertise in Python. Write a well-documented function that sorts a list of numbers using merge sort algorithm.',
+              ['role', 'context']
+            )
           }
         }]
       };
@@ -73,7 +90,9 @@ describe('OpenAIClient', () => {
         ['Add role definition', 'Add more context']
       );
 
-      expect(result.optimizedPrompt).toBe(mockResponse.choices[0].message.content);
+      expect(result.optimizedPrompt).toBe(
+        'You are a senior software engineer with expertise in Python. Write a well-documented function that sorts a list of numbers using merge sort algorithm.'
+      );
       expect(result.suggestionsApplied).toHaveLength(2);
       expect(result.suggestionsApplied[0]).toEqual({
         component: 'role',
@@ -83,7 +102,7 @@ describe('OpenAIClient', () => {
 
     it('should call OpenAI API with correct parameters', async () => {
       mockCreate.mockResolvedValue({
-        choices: [{ message: { content: 'Improved prompt' } }]
+        choices: [{ message: { content: structuredContent('Improved prompt', ['role', 'context']) } }]
       });
 
       const prompt = 'Write a function';
@@ -92,8 +111,8 @@ describe('OpenAIClient', () => {
       await client.optimizePrompt(prompt, suggestions);
 
       expect(mockCreate).toHaveBeenCalledWith(
-        {
-          model: 'gpt-4o',
+        expect.objectContaining({
+          model: DEFAULT_MODEL,
           messages: [
             {
               role: 'system',
@@ -106,14 +125,22 @@ describe('OpenAIClient', () => {
           ],
           temperature: 0.7,
           max_tokens: 2000,
-        },
+          response_format: expect.objectContaining({
+            type: 'json_schema',
+            json_schema: expect.objectContaining({ strict: true })
+          }),
+        }),
         { signal: expect.any(AbortSignal) }
       );
     });
 
-    it('should extract component types from suggestions', async () => {
+    it('should use the component classification the model returns, in order', async () => {
       mockCreate.mockResolvedValue({
-        choices: [{ message: { content: 'Improved' } }]
+        choices: [{
+          message: {
+            content: structuredContent('Improved', ['role', 'context', 'format', 'constraint'])
+          }
+        }]
       });
 
       const result = await client.optimizePrompt('Test', [
@@ -129,9 +156,9 @@ describe('OpenAIClient', () => {
       expect(result.suggestionsApplied[3].component).toBe('constraint');
     });
 
-    it('should handle suggestions without component keywords', async () => {
+    it('should default to "general" when the model omits a classification', async () => {
       mockCreate.mockResolvedValue({
-        choices: [{ message: { content: 'Improved' } }]
+        choices: [{ message: { content: structuredContent('Improved', []) } }]
       });
 
       const result = await client.optimizePrompt('Test', [
@@ -152,6 +179,7 @@ describe('OpenAIClient', () => {
       const result = await client.optimizePrompt(originalPrompt, ['Add role']);
 
       expect(result.optimizedPrompt).toBe(originalPrompt);
+      expect(result.suggestionsApplied[0].component).toBe('general');
     });
 
     it('should return original prompt if API returns no choices', async () => {
@@ -170,7 +198,7 @@ describe('OpenAIClient', () => {
     it('should handle API errors and transform them', async () => {
       const OpenAIModule = await import('openai');
       const APIError = (OpenAIModule as any).APIError;
-      
+
       const apiError = new APIError(
         401,
         { error: { message: 'Invalid API key' } },
@@ -192,7 +220,7 @@ describe('OpenAIClient', () => {
     it('should handle rate limit errors', async () => {
       const OpenAIModule = await import('openai');
       const APIError = (OpenAIModule as any).APIError;
-      
+
       const apiError = new APIError(
         429,
         { error: { message: 'Rate limit exceeded' } },
@@ -213,7 +241,7 @@ describe('OpenAIClient', () => {
     it('should handle server errors', async () => {
       const OpenAIModule = await import('openai');
       const APIError = (OpenAIModule as any).APIError;
-      
+
       const apiError = new APIError(
         500,
         { error: { message: 'Internal server error' } },
@@ -253,12 +281,20 @@ describe('OpenAIClient', () => {
         expect(error).toBeDefined();
       }
     });
+
+    it('should surface malformed JSON from the provider as an error', async () => {
+      mockCreate.mockResolvedValue({
+        choices: [{ message: { content: '{not valid json' } }]
+      });
+
+      await expect(client.optimizePrompt('Test', ['suggestion'])).rejects.toThrow();
+    });
   });
 
   describe('Rate Limiting', () => {
     it('should enforce rate limiting', async () => {
       mockCreate.mockResolvedValue({
-        choices: [{ message: { content: 'Improved' } }]
+        choices: [{ message: { content: structuredContent('Improved', ['general']) } }]
       });
 
       // Make 10 requests (the limit)
@@ -276,7 +312,7 @@ describe('OpenAIClient', () => {
 
     it('should include rate limit error with correct status code', async () => {
       mockCreate.mockResolvedValue({
-        choices: [{ message: { content: 'Improved' } }]
+        choices: [{ message: { content: structuredContent('Improved', ['general']) } }]
       });
 
       // Exhaust rate limit
@@ -298,7 +334,7 @@ describe('OpenAIClient', () => {
   describe('Edge Cases', () => {
     it('should handle empty suggestions array', async () => {
       mockCreate.mockResolvedValue({
-        choices: [{ message: { content: 'Improved prompt' } }]
+        choices: [{ message: { content: structuredContent('Improved prompt', []) } }]
       });
 
       const result = await client.optimizePrompt('Write a function', []);
@@ -309,7 +345,7 @@ describe('OpenAIClient', () => {
 
     it('should handle very long prompts', async () => {
       mockCreate.mockResolvedValue({
-        choices: [{ message: { content: 'Improved' } }]
+        choices: [{ message: { content: structuredContent('Improved', ['role']) } }]
       });
 
       const longPrompt = 'Write a function. '.repeat(500);
@@ -321,7 +357,7 @@ describe('OpenAIClient', () => {
 
     it('should handle special characters in prompts', async () => {
       mockCreate.mockResolvedValue({
-        choices: [{ message: { content: 'Improved' } }]
+        choices: [{ message: { content: structuredContent('Improved', ['role']) } }]
       });
 
       const result = await client.optimizePrompt(
@@ -334,7 +370,7 @@ describe('OpenAIClient', () => {
 
     it('should handle unicode characters', async () => {
       mockCreate.mockResolvedValue({
-        choices: [{ message: { content: 'Improved' } }]
+        choices: [{ message: { content: structuredContent('Improved', ['role']) } }]
       });
 
       const result = await client.optimizePrompt(

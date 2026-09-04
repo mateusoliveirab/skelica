@@ -10,7 +10,7 @@ export type LLMClient = {
 };
 
 export class LLMClientFactory {
-  static async createClient(provider: LLMProvider, apiKey?: string): Promise<LLMClient> {
+  static async createClient(provider: LLMProvider, apiKey?: string, model?: string): Promise<LLMClient> {
     if (!apiKey || apiKey.trim() === '') {
       throw new LLMConfigurationError(
         provider,
@@ -20,10 +20,10 @@ export class LLMClientFactory {
 
     if (provider === 'openai') {
       const { OpenAIClient } = await import('./openaiClient');
-      return new OpenAIClient(apiKey);
+      return model ? new OpenAIClient(apiKey, model) : new OpenAIClient(apiKey);
     } else {
       const { AnthropicClient } = await import('./anthropicClient');
-      return new AnthropicClient(apiKey);
+      return model ? new AnthropicClient(apiKey, model) : new AnthropicClient(apiKey);
     }
   }
 

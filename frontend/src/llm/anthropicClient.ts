@@ -2,17 +2,25 @@ import Anthropic from '@anthropic-ai/sdk';
 import type { OptimizeResult } from './openaiClient';
 import { RateLimiter } from './rateLimiter';
 import { LLMApiError } from './errors';
+import { COMPONENT_TYPES, buildSystemPrompt, toSuggestionsApplied, type StructuredOptimizeResponse } from './schema';
+
+const TOOL_NAME = 'submit_optimization';
+
+/** Current Claude model as of this session — see ADR-0002. */
+export const DEFAULT_MODEL = 'claude-sonnet-5';
 
 export class AnthropicClient {
   private client: Anthropic;
   private rateLimiter: RateLimiter;
+  private model: string;
 
-  constructor(apiKey: string) {
+  constructor(apiKey: string, model: string = DEFAULT_MODEL) {
     this.client = new Anthropic({
       apiKey,
       dangerouslyAllowBrowser: true // Required for client-side usage
     });
     this.rateLimiter = new RateLimiter();
+    this.model = model;
   }
 
   async optimizePrompt(
@@ -34,43 +42,48 @@ export class AnthropicClient {
     try {
       this.rateLimiter.recordRequest();
 
-      const systemPrompt = `You are a prompt engineering expert specializing in Claude prompts.
-Improve the following prompt by addressing these issues: ${suggestions.join(', ')}
-
-Provide only the improved prompt without explanations or additional commentary.`;
+      const systemPrompt = buildSystemPrompt(suggestions, 'a prompt engineering expert specializing in Claude prompts');
 
       const response = await this.client.messages.create({
-        model: 'claude-3-5-sonnet-20241022',
+        model: this.model,
         max_tokens: 2000,
         system: systemPrompt,
+        tools: [{
+          name: TOOL_NAME,
+          description: 'Submit the optimized prompt and the component classification for each addressed issue, in order.',
+          input_schema: {
+            type: 'object',
+            properties: {
+              optimizedPrompt: { type: 'string' },
+              componentsForSuggestions: {
+                type: 'array',
+                items: { type: 'string', enum: COMPONENT_TYPES as unknown as string[] },
+              },
+            },
+            required: ['optimizedPrompt', 'componentsForSuggestions'],
+          },
+        }],
+        tool_choice: { type: 'tool', name: TOOL_NAME },
         messages: [{
           role: 'user',
           content: `Improve this prompt:\n\n${prompt}`
         }]
       }, { signal: controller.signal });
 
-      const optimizedPrompt = response.content[0]?.type === 'text'
-        ? response.content[0].text
-        : prompt;
+      const toolBlock = response.content.find(
+        (block): block is Anthropic.ToolUseBlock => block.type === 'tool_use'
+      );
+      const parsed = toolBlock?.input as StructuredOptimizeResponse | undefined;
 
       return {
-        optimizedPrompt,
-        suggestionsApplied: suggestions.map(s => ({
-          component: this.extractComponent(s),
-          suggestedImprovement: s
-        }))
+        optimizedPrompt: parsed?.optimizedPrompt || prompt,
+        suggestionsApplied: toSuggestionsApplied(parsed, suggestions),
       };
     } catch (error) {
       throw this.handleError(error);
     } finally {
       clearTimeout(timeoutId);
     }
-  }
-
-  private extractComponent(suggestion: string): string {
-    // Extract component type from suggestion text
-    const componentMatch = suggestion.match(/\b(role|context|instruction|constraint|example|format|audience|tone)\b/i);
-    return componentMatch ? componentMatch[1].toLowerCase() : 'general';
   }
 
   private handleError(error: unknown): LLMApiError {
@@ -93,4 +106,3 @@ Provide only the improved prompt without explanations or additional commentary.`
     return new LLMApiError('Unknown error occurred', 500, 'anthropic');
   }
 }
-

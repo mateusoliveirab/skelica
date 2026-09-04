@@ -3,8 +3,19 @@
  */
 
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { AnthropicClient } from '../anthropicClient';
+import { AnthropicClient, DEFAULT_MODEL } from '../anthropicClient';
 import { LLMApiError } from '../errors';
+
+function toolUseResponse(optimizedPrompt: string, componentsForSuggestions: string[] = []) {
+  return {
+    content: [{
+      type: 'tool_use',
+      id: 'toolu_1',
+      name: 'submit_optimization',
+      input: { optimizedPrompt, componentsForSuggestions },
+    }],
+  };
+}
 
 // Mock the Anthropic SDK
 vi.mock('@anthropic-ai/sdk', () => {
@@ -37,7 +48,7 @@ describe('AnthropicClient', () => {
 
   beforeEach(async () => {
     vi.clearAllMocks();
-    
+
     client = new AnthropicClient('sk-ant-test-key-123');
     mockCreate = client['client'].messages.create as ReturnType<typeof vi.fn>;
   });
@@ -52,25 +63,33 @@ describe('AnthropicClient', () => {
       expect(testClient).toBeDefined();
       expect(testClient['client']).toBeDefined();
     });
+
+    it('should default to DEFAULT_MODEL when no model is given', () => {
+      const testClient = new AnthropicClient('sk-ant-test-key');
+      expect(testClient['model']).toBe(DEFAULT_MODEL);
+    });
+
+    it('should accept a model override', () => {
+      const testClient = new AnthropicClient('sk-ant-test-key', 'claude-haiku-4-5-20251001');
+      expect(testClient['model']).toBe('claude-haiku-4-5-20251001');
+    });
   });
 
   describe('optimizePrompt', () => {
     it('should successfully optimize prompt with valid response', async () => {
-      const mockResponse = {
-        content: [{
-          type: 'text',
-          text: 'You are a senior software engineer with expertise in Python. Write a well-documented function that sorts a list of numbers using merge sort algorithm.'
-        }]
-      };
-
-      mockCreate.mockResolvedValue(mockResponse);
+      mockCreate.mockResolvedValue(toolUseResponse(
+        'You are a senior software engineer with expertise in Python. Write a well-documented function that sorts a list of numbers using merge sort algorithm.',
+        ['role', 'context']
+      ));
 
       const result = await client.optimizePrompt(
         'Write a function to sort numbers',
         ['Add role definition', 'Add more context']
       );
 
-      expect(result.optimizedPrompt).toBe(mockResponse.content[0].text);
+      expect(result.optimizedPrompt).toBe(
+        'You are a senior software engineer with expertise in Python. Write a well-documented function that sorts a list of numbers using merge sort algorithm.'
+      );
       expect(result.suggestionsApplied).toHaveLength(2);
       expect(result.suggestionsApplied[0]).toEqual({
         component: 'role',
@@ -79,9 +98,7 @@ describe('AnthropicClient', () => {
     });
 
     it('should call Anthropic API with correct parameters', async () => {
-      mockCreate.mockResolvedValue({
-        content: [{ type: 'text', text: 'Improved prompt' }]
-      });
+      mockCreate.mockResolvedValue(toolUseResponse('Improved prompt', ['role', 'context']));
 
       const prompt = 'Write a function';
       const suggestions = ['Add role', 'Add context'];
@@ -89,23 +106,25 @@ describe('AnthropicClient', () => {
       await client.optimizePrompt(prompt, suggestions);
 
       expect(mockCreate).toHaveBeenCalledWith(
-        {
-          model: 'claude-3-5-sonnet-20241022',
+        expect.objectContaining({
+          model: DEFAULT_MODEL,
           max_tokens: 2000,
           system: expect.stringContaining('prompt engineering expert'),
+          tool_choice: { type: 'tool', name: 'submit_optimization' },
+          tools: expect.arrayContaining([
+            expect.objectContaining({ name: 'submit_optimization' })
+          ]),
           messages: [{
             role: 'user',
             content: expect.stringContaining(prompt)
           }]
-        },
+        }),
         { signal: expect.any(AbortSignal) }
       );
     });
 
-    it('should extract component types from suggestions', async () => {
-      mockCreate.mockResolvedValue({
-        content: [{ type: 'text', text: 'Improved' }]
-      });
+    it('should use the component classification the model returns, in order', async () => {
+      mockCreate.mockResolvedValue(toolUseResponse('Improved', ['role', 'context', 'format', 'constraint']));
 
       const result = await client.optimizePrompt('Test', [
         'Add role definition',
@@ -120,10 +139,8 @@ describe('AnthropicClient', () => {
       expect(result.suggestionsApplied[3].component).toBe('constraint');
     });
 
-    it('should handle suggestions without component keywords', async () => {
-      mockCreate.mockResolvedValue({
-        content: [{ type: 'text', text: 'Improved' }]
-      });
+    it('should default to "general" when the model omits a classification', async () => {
+      mockCreate.mockResolvedValue(toolUseResponse('Improved', []));
 
       const result = await client.optimizePrompt('Test', [
         'Make it better',
@@ -134,39 +151,38 @@ describe('AnthropicClient', () => {
       expect(result.suggestionsApplied[1].component).toBe('general');
     });
 
-    it('should return original prompt if API returns non-text content', async () => {
+    it('should return original prompt if API returns no tool_use block', async () => {
+      const originalPrompt = 'Write a function';
       mockCreate.mockResolvedValue({
-        content: [{ type: 'image', source: {} }]
+        content: [{ type: 'text', text: 'I refuse to use the tool.' }]
       });
 
-      const originalPrompt = 'Write a function';
       const result = await client.optimizePrompt(originalPrompt, ['Add role']);
 
       expect(result.optimizedPrompt).toBe(originalPrompt);
+      expect(result.suggestionsApplied[0].component).toBe('general');
     });
 
     it('should return original prompt if API returns empty content', async () => {
-      mockCreate.mockResolvedValue({
-        content: []
-      });
-
       const originalPrompt = 'Write a function';
+      mockCreate.mockResolvedValue({ content: [] });
+
       const result = await client.optimizePrompt(originalPrompt, ['Add role']);
 
       expect(result.optimizedPrompt).toBe(originalPrompt);
     });
 
-    it('should handle multiple content blocks and use first text block', async () => {
+    it('should pick the tool_use block even alongside text blocks', async () => {
       mockCreate.mockResolvedValue({
         content: [
-          { type: 'text', text: 'First text block' },
-          { type: 'text', text: 'Second text block' }
+          { type: 'text', text: 'Here you go.' },
+          { type: 'tool_use', id: 'toolu_1', name: 'submit_optimization', input: { optimizedPrompt: 'Final answer', componentsForSuggestions: ['role'] } }
         ]
       });
 
       const result = await client.optimizePrompt('Test', ['suggestion']);
 
-      expect(result.optimizedPrompt).toBe('First text block');
+      expect(result.optimizedPrompt).toBe('Final answer');
     });
   });
 
@@ -174,7 +190,7 @@ describe('AnthropicClient', () => {
     it('should handle API errors and transform them', async () => {
       const AnthropicModule = await import('@anthropic-ai/sdk');
       const APIError = (AnthropicModule as any).APIError;
-      
+
       const apiError = new APIError(
         401,
         { error: { message: 'Invalid API key' } },
@@ -196,7 +212,7 @@ describe('AnthropicClient', () => {
     it('should handle rate limit errors', async () => {
       const AnthropicModule = await import('@anthropic-ai/sdk');
       const APIError = (AnthropicModule as any).APIError;
-      
+
       const apiError = new APIError(
         429,
         { error: { message: 'Rate limit exceeded' } },
@@ -217,7 +233,7 @@ describe('AnthropicClient', () => {
     it('should handle server errors', async () => {
       const AnthropicModule = await import('@anthropic-ai/sdk');
       const APIError = (AnthropicModule as any).APIError;
-      
+
       const apiError = new APIError(
         500,
         { error: { message: 'Internal server error' } },
@@ -261,9 +277,7 @@ describe('AnthropicClient', () => {
 
   describe('Rate Limiting', () => {
     it('should enforce rate limiting', async () => {
-      mockCreate.mockResolvedValue({
-        content: [{ type: 'text', text: 'Improved' }]
-      });
+      mockCreate.mockResolvedValue(toolUseResponse('Improved', ['general']));
 
       // Make 10 requests (the limit)
       const requests = [];
@@ -279,9 +293,7 @@ describe('AnthropicClient', () => {
     });
 
     it('should include rate limit error with correct status code', async () => {
-      mockCreate.mockResolvedValue({
-        content: [{ type: 'text', text: 'Improved' }]
-      });
+      mockCreate.mockResolvedValue(toolUseResponse('Improved', ['general']));
 
       // Exhaust rate limit
       const requests = [];
@@ -301,9 +313,7 @@ describe('AnthropicClient', () => {
 
   describe('Edge Cases', () => {
     it('should handle empty suggestions array', async () => {
-      mockCreate.mockResolvedValue({
-        content: [{ type: 'text', text: 'Improved prompt' }]
-      });
+      mockCreate.mockResolvedValue(toolUseResponse('Improved prompt', []));
 
       const result = await client.optimizePrompt('Write a function', []);
 
@@ -312,9 +322,7 @@ describe('AnthropicClient', () => {
     });
 
     it('should handle very long prompts', async () => {
-      mockCreate.mockResolvedValue({
-        content: [{ type: 'text', text: 'Improved' }]
-      });
+      mockCreate.mockResolvedValue(toolUseResponse('Improved', ['role']));
 
       const longPrompt = 'Write a function. '.repeat(500);
       const result = await client.optimizePrompt(longPrompt, ['Add role']);
@@ -324,9 +332,7 @@ describe('AnthropicClient', () => {
     });
 
     it('should handle special characters in prompts', async () => {
-      mockCreate.mockResolvedValue({
-        content: [{ type: 'text', text: 'Improved' }]
-      });
+      mockCreate.mockResolvedValue(toolUseResponse('Improved', ['role']));
 
       const result = await client.optimizePrompt(
         'Write a function with @#$%^&*() characters',
@@ -337,9 +343,7 @@ describe('AnthropicClient', () => {
     });
 
     it('should handle unicode characters', async () => {
-      mockCreate.mockResolvedValue({
-        content: [{ type: 'text', text: 'Improved' }]
-      });
+      mockCreate.mockResolvedValue(toolUseResponse('Improved', ['role']));
 
       const result = await client.optimizePrompt(
         'Escreva uma função com émojis 🚀',
@@ -350,9 +354,7 @@ describe('AnthropicClient', () => {
     });
 
     it('should handle multilingual suggestions', async () => {
-      mockCreate.mockResolvedValue({
-        content: [{ type: 'text', text: 'Prompt mejorado' }]
-      });
+      mockCreate.mockResolvedValue(toolUseResponse('Prompt mejorado', ['role', 'context']));
 
       const result = await client.optimizePrompt(
         'Escribe una función',
