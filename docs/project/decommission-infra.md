@@ -62,6 +62,29 @@ Verificar que pegou:
 grep -A2 '^on:' .github/workflows/deploy.yml    # deve mostrar só workflow_dispatch
 ```
 
+### Fase 0.1 — Script de apoio (escrito nesta sessão)
+
+Como o ambiente local **não tem token da Cloudflare** (só `CLOUDFLARE_ACCOUNT_ID`, sem
+`CLOUDFLARE_API_TOKEN`) nem `wrangler` autenticado, não foi possível executar as fases abaixo
+daqui. Foi escrito um script para você rodar quando tiver o token:
+
+```bash
+export CLOUDFLARE_API_TOKEN=...      # permissão Pages:Edit
+export CLOUDFLARE_ACCOUNT_ID=...
+
+bash scripts/decommission-cloudflare-pages.sh            # inspeção — não destrutivo
+bash scripts/decommission-cloudflare-pages.sh --delete   # apaga (pede confirmação)
+```
+
+A inspeção responde a pergunta da Fase 1 diretamente: mostra `source.type` do projeto. Se vier
+`github`, a integração está ligada e o Actions congelado **não** basta. Se vier vazio, a Fase 1
+já está satisfeita.
+
+> **Pista coletada:** o push do commit de encerramento **não** alterou o bundle em produção
+> (`index-BEaUjKz_.js` antes e depois). Isso sugere que não há integração Git ativa — se
+> houvesse, a Cloudflare teria compilado `main`. Não é prova (builds podem atrasar), então
+> confirme com o script ou no painel.
+
 ### Fase 1 — Desconectar a integração Git do Cloudflare Pages ⚠️ **passo crítico**
 
 **Isto é o que a Fase 0 NÃO resolve.** O `iac/pages.tf` descreve um projeto Pages com
@@ -82,6 +105,12 @@ não impede esse deploy.
 **Opção A (congelar):** nada a fazer. Fase 1 concluída = congelado.
 
 **Opção B (desligar):**
+
+```bash
+bash scripts/decommission-cloudflare-pages.sh --delete
+```
+
+ou pelo painel:
 
 1. Painel Cloudflare → **Workers & Pages** → `skelica`
 2. **Settings** (rodapé) → **Delete project**
