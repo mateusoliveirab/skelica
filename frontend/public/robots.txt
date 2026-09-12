@@ -1,0 +1,6 @@
+# Skelica is a single-page app; Googlebot needs /assets/* to render it,
+# so nothing is disallowed here.
+User-agent: *
+Allow: /
+
+Sitemap: https://skelica.pages.dev/sitemap.xml

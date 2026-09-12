@@ -11,7 +11,24 @@ export type SemanticComponents = Record<string, number>;
 // Internal state
 let worker: Worker | null = null;
 let progressCallback: ((progress: number) => void) | null = null;
-const messageCallbacks = new Map<string, { resolve: (val: any) => void; reject: (err: any) => void }>();
+type SemanticScores = Record<string, number>;
+
+/**
+ * The worker replies with either a single score set (a string was passed) or an array of them
+ * (an array was passed). Callers know which they asked for, so the transport stays untyped and
+ * each caller narrows the result.
+ */
+interface PendingRequest {
+  resolve: (value: SemanticScores | SemanticScores[]) => void;
+  reject: (error: Error) => void;
+}
+
+/** Shape of the messages `core/worker.ts` posts back. */
+type WorkerMessage =
+  | { type: 'progress'; payload: { status?: string; progress?: number } }
+  | { id: string; type: 'result'; payload: SemanticScores | SemanticScores[] }
+  | { id: string; type: 'error'; payload: string };
+const messageCallbacks = new Map<string, PendingRequest>();
 let nextMessageId = 0;
 
 export function setModelProgressCallback(callback: (progress: number) => void) {
@@ -22,27 +39,28 @@ function getWorker(): Worker {
   if (!worker) {
     worker = new Worker(new URL('./worker.ts', import.meta.url), { type: 'module' });
     
-    worker.addEventListener('message', (event) => {
-      const { id, type, payload } = event.data;
+    worker.addEventListener('message', (event: MessageEvent<WorkerMessage>) => {
+      const message = event.data;
 
-      if (type === 'progress') {
-        if (payload.status === 'progress' && payload.progress !== undefined && progressCallback) {
-          progressCallback(payload.progress);
+      if (message.type === 'progress') {
+        const { status, progress } = message.payload;
+        if (status === 'progress' && progress !== undefined && progressCallback) {
+          progressCallback(progress);
         }
-        if (payload.status === 'done' && progressCallback) {
+        if (status === 'done' && progressCallback) {
           progressCallback(100);
         }
         return;
       }
 
-      if (id !== undefined && messageCallbacks.has(id)) {
-        const { resolve, reject } = messageCallbacks.get(id)!;
-        messageCallbacks.delete(id);
-        
-        if (type === 'error') {
-          reject(new Error(payload));
+      if (messageCallbacks.has(message.id)) {
+        const { resolve, reject } = messageCallbacks.get(message.id)!;
+        messageCallbacks.delete(message.id);
+
+        if (message.type === 'error') {
+          reject(new Error(message.payload));
         } else {
-          resolve(payload);
+          resolve(message.payload);
         }
       }
     });
@@ -57,12 +75,19 @@ function getWorker(): Worker {
 /**
  * Send a classification request to the worker
  */
-function classifyWithWorker(texts: string[], language: 'en' | 'pt' | 'es'): Promise<any[]> {
+function classifyWithWorker(
+  texts: string[],
+  language: 'en' | 'pt' | 'es'
+): Promise<SemanticScores[]> {
   return new Promise((resolve, reject) => {
     try {
       const w = getWorker();
       const id = `msg_${nextMessageId++}`;
-      messageCallbacks.set(id, { resolve, reject });
+      messageCallbacks.set(id, {
+        // The worker echoes an array for an array request; the caller knows its own shape.
+        resolve: (value) => resolve(value as SemanticScores[]),
+        reject,
+      });
       w.postMessage({ id, type: 'classify', payload: texts, language });
     } catch (e) {
       reject(e);
@@ -114,6 +139,29 @@ async function performClassification(
   }
 
   return Array.isArray(input) ? results : results[0];
+}
+
+/**
+ * Starts loading the model without classifying anything, and resolves when it is ready.
+ *
+ * This exists so the app can pay the ~140 MiB download *after* the user has already seen a
+ * result, in the background, instead of blocking the first analysis. Rejects if the model
+ * cannot be loaded (offline, blocked, out of memory).
+ */
+export function warmUp(): Promise<void> {
+  return new Promise<void>((resolve, reject) => {
+    try {
+      const w = getWorker();
+      const id = `warmup_${nextMessageId++}`;
+      messageCallbacks.set(id, {
+        resolve: () => resolve(),
+        reject: (error) => reject(error),
+      });
+      w.postMessage({ id, type: 'init' });
+    } catch (error) {
+      reject(error instanceof Error ? error : new Error(String(error)));
+    }
+  });
 }
 
 /**

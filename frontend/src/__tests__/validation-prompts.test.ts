@@ -17,7 +17,6 @@ import { getAnatomyParser } from '../core/anatomyParser';
 import { Scorer } from '../core/scorer';
 
 import validationData from '../data/validation-prompts.json';
-import semanticMocks from '../data/semantic-mocks.json';
 
 type PresenceExpectation = 'present' | 'partial' | 'absent';
 type _ComponentKey =
@@ -58,8 +57,28 @@ const COMPONENT_MAP: Record<string, string> = {
   tone: 'tone',
 };
 
+/**
+ * The golden dataset predates the split of negative constraints into their own component.
+ * Its `constraint: present` expectations were written when "Do not use X" counted as a
+ * constraint, so a negative_constraint satisfies a `constraint` expectation.
+ */
+const COMPONENT_ALIASES: Record<string, string[]> = {
+  constraint: ['constraint', 'negative_constraint'],
+};
+
 function isComponentDetected(componentType: string, detectedTypes: string[]): boolean {
-  return detectedTypes.includes(componentType);
+  const accepted = COMPONENT_ALIASES[componentType] ?? [componentType];
+  return accepted.some((type) => detectedTypes.includes(type));
+}
+
+/**
+ * Mirrors how the app feeds the scorer: a map of componentType → confidence.
+ * Passing the components array here instead would set every confidence to undefined
+ * (the map would be keyed by array indices) and silently zero the completeness dimension,
+ * which is exactly the production bug this suite failed to catch.
+ */
+function detectedComponentMap(components: Array<{ componentType: string; confidence: number }>) {
+  return Object.fromEntries(components.map((c) => [c.componentType, c.confidence]));
 }
 
 describe(`Validation Prompts — Regression Suite (tier: ${tier})`, () => {
@@ -97,7 +116,7 @@ describe(`Validation Prompts — Regression Suite (tier: ${tier})`, () => {
     for (const prompt of prompts) {
       it(`${prompt.id} (${prompt.category}): score within ${prompt.scoreRange.min}-${prompt.scoreRange.max}`, () => {
         const anatomyResult = parser.parse(prompt.text);
-        const scoreResult = scorer.score(prompt.text, anatomyResult.components);
+        const scoreResult = scorer.score(prompt.text, detectedComponentMap(anatomyResult.components));
         const score = scoreResult.overall.score;
         const { min, max } = prompt.scoreRange;
 
@@ -121,11 +140,11 @@ describe(`Validation Prompts — Regression Suite (tier: ${tier})`, () => {
 
       const badScores = badPrompts.map((p) => {
         const anatomyResult = parser.parse(p.text);
-        return scorer.score(p.text, anatomyResult.components).overall.score;
+        return scorer.score(p.text, detectedComponentMap(anatomyResult.components)).overall.score;
       });
       const goodScores = goodPrompts.map((p) => {
         const anatomyResult = parser.parse(p.text);
-        return scorer.score(p.text, anatomyResult.components).overall.score;
+        return scorer.score(p.text, detectedComponentMap(anatomyResult.components)).overall.score;
       });
 
       const avgBad = badScores.reduce((a, b) => a + b, 0) / badScores.length;

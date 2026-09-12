@@ -15,6 +15,12 @@ import { convertScoreToScoreResponse } from '../adapters/scoreAdapter';
 import type { AnalyzeResponse } from '../api/types';
 import type { ScoreResponse } from '../api/types';
 
+/**
+ * Prohibitions ("Do not use X") are reported as their own `negative_constraint`
+ * component in the 9-component taxonomy, so constraint assertions accept the family.
+ */
+const CONSTRAINT_FAMILY = ['constraint', 'negative_constraint'];
+
 describe('E2E: Analysis Flow', () => {
   let parser: AnatomyParser;
   let scorer: Scorer;
@@ -140,7 +146,7 @@ Use a professional, educational tone.`;
       const anatomyResult = parser.parse(prompt);
       const analysis: AnalyzeResponse = convertAnatomyToAnalyzeResponse(anatomyResult);
 
-      const constraintComponent = analysis.components.find(c => c.component === 'constraint');
+      const constraintComponent = analysis.components.find(c => CONSTRAINT_FAMILY.includes(c.component) && c.presence.present);
       expect(constraintComponent).toBeDefined();
       expect(constraintComponent?.presence.present).toBe(true);
     });
@@ -205,7 +211,7 @@ Output as JSON.`;
       const componentTypes = presentComponents.map(c => c.component);
       expect(componentTypes).toContain('role');
       expect(componentTypes).toContain('instruction');
-      expect(componentTypes).toContain('constraint');
+      expect(componentTypes.some((t) => CONSTRAINT_FAMILY.includes(t))).toBe(true);
       expect(componentTypes).toContain('output_format');
     });
   });
@@ -408,7 +414,7 @@ Output as JSON.`;
       const componentTypes = presentComponents.map(c => c.component);
       expect(componentTypes).toContain('role');
       expect(componentTypes).toContain('instruction');
-      expect(componentTypes).toContain('constraint');
+      expect(componentTypes.some((t) => CONSTRAINT_FAMILY.includes(t))).toBe(true);
       expect(componentTypes).toContain('output_format');
     });
 

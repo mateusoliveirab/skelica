@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState } from 'react';
 import { motion } from 'framer-motion';
 import { Eye, EyeOff, Save, Trash2, Key, CheckCircle2 } from 'lucide-react';
 import { SettingsStore } from '../config/settings';
@@ -8,18 +8,13 @@ interface SettingsPanelProps {
 }
 
 export function SettingsPanel({ onClose }: SettingsPanelProps) {
-  const [openaiKey, setOpenaiKey] = useState('');
-  const [anthropicKey, setAnthropicKey] = useState('');
+  // Read once, lazily: initialising from the store in an effect would render the empty form
+  // first and then re-render with the saved keys.
+  const [openaiKey, setOpenaiKey] = useState(() => SettingsStore.load().openaiApiKey ?? '');
+  const [anthropicKey, setAnthropicKey] = useState(() => SettingsStore.load().anthropicApiKey ?? '');
   const [showOpenaiKey, setShowOpenaiKey] = useState(false);
   const [showAnthropicKey, setShowAnthropicKey] = useState(false);
   const [saveStatus, setSaveStatus] = useState<'idle' | 'saving' | 'saved'>('idle');
-
-  // Load existing keys on mount
-  useEffect(() => {
-    const settings = SettingsStore.load();
-    setOpenaiKey(settings.openaiApiKey || '');
-    setAnthropicKey(settings.anthropicApiKey || '');
-  }, []);
 
   const handleSave = () => {
     setSaveStatus('saving');

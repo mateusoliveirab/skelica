@@ -1,274 +1,136 @@
-# skelica - Prompt Anatomy & Optimizer
+# Skelica — Status
 
-## Status: Client-Side Architecture Complete ✅
+**Última atualização:** 2026-09-12
+**Classificação:** PARQUE — no ar, funcional, sem desenvolvimento ativo.
 
-**Last Updated:** 2026-03-24
-
----
-
-## Architecture
-
-**Type:** Static Web Application (Client-Side Only)
-
-All prompt analysis, scoring, and processing happens in the browser using TypeScript. No backend server required.
+> **Leia primeiro:** [`decision-parked.md`](./decision-parked.md) — por que o desenvolvimento parou e quais condições falsificáveis justificariam reabrir. Este documento descreve apenas **o que existe hoje**.
 
 ---
 
-## Running the Application
+## O que o produto faz
 
-| Command | Purpose |
-|---------|---------|
-| `npm install` | Install dependencies |
-| `npm run dev` | Development server at http://localhost:5173 |
-| `npm run build` | Production build to `dist/` |
-| `npm run preview` | Preview production build |
-| `npm test` | Run test suite |
-| `npm run test:prompts` | Regression tests — core tier (11 prompts) |
+Análise de anatomia de prompts de IA, em dois passes:
+
+1. **Regex multilíngue** (instantâneo, offline, custo zero) — detecta 9 componentes estruturais e calcula score em 8 dimensões.
+2. **Embeddings multilíngues** (carregados em background após o primeiro resultado) — passam a ser o detector **autoritativo** e podem corrigir o regex.
+
+Depois do diagnóstico, o usuário pode enviar o prompt anotado para ChatGPT ou Claude com os componentes ausentes explicitados (`AIButtons.tsx`).
+
+**Não existe:** contas, pagamento, backend, histórico, e nenhuma otimização por LLM ligada à UI (`llm/` tem clientes funcionais, mas nenhum chamador).
+
+---
+
+## Estado técnico (verificado em 2026-09-12)
+
+| Verificação | Comando | Resultado |
+|---|---|---|
+| Testes | `cd frontend && npx vitest run` | **416/416** |
+| Tier completo de validação | `TEST_TIER=full npx vitest run src/__tests__/validation-prompts.test.ts` | **167/167** |
+| Tipos + build | `cd frontend && npm run build` | ✅ |
+| Lint | `cd frontend && npm run lint` | **limpo** |
+
+### Arquitetura
+
+Aplicação web estática, 100% client-side, sem backend. Deploy no Cloudflare Pages com custo de infraestrutura ~R$ 0 (a banda do modelo é do usuário).
+
+```
+prompt
+  │
+  ├─ 1. REGEX (todos os 3 idiomas, união, idioma só desempata)   → instantâneo
+  ├─ 2. SCORE (8 dimensões, presença vinda do parser)            → instantâneo
+  ├─ 3. EMBEDDINGS (background, ~140 MiB uma vez, em cache)      → refina
+  └─ 4. HANDOFF para ChatGPT/Claude                              → ação
+```
+
+Detalhes e justificativas: [`analysis-engine-architecture.md`](./analysis-engine-architecture.md).
+
+### Propriedades garantidas por teste
+
+| Propriedade | Teste |
+|---|---|
+| Idioma detectado não altera os componentes encontrados | `engine-invariants.test.ts` |
+| Prompt com estrutura nunca retorna zero componentes | `engine-invariants.test.ts` |
+| Inglês comum nunca é lido como PT/ES | `engine-invariants.test.ts` |
+| Viés de score PT↔EN ≤ 0,12 (medido 0,077) | `engine-invariants.test.ts` |
+| Quando o semântico pode contradizer o regex | `semantic-authority.test.ts` |
+| Dataset dourado: 83 prompts, detecção + faixa de score | `validation-prompts.test.ts` |
+
+---
+
+## Componentes detectados (9)
+
+| Componente | Descrição |
+|------------|-----------|
+| `role` | Papel/persona atribuído à IA |
+| `context` | Informação de fundo |
+| `instruction` | Tarefa principal |
+| `constraint` | Regras e limites positivos |
+| `negative_constraint` | Proibições ("Não use X") |
+| `example` | Exemplos de entrada/saída |
+| `format` | Formato esperado da saída |
+| `audience` | Público-alvo |
+| `tone` | Tom e estilo |
+
+## Dimensões de score (8)
+
+Clarity 15% · Specificity 12% · Completeness 15% · Structure 10% · Effectiveness 12% · Actionability 12% · Accuracy 12% · Relevance 12%
+
+Notas: **A+** ≥95 → **A** ≥90 → **B** ≥75 → **C** ≥60 → **D** ≥40 → **F** <40.
+As dimensões derivam presença de componente do parser, **nunca de listas de palavras em inglês** — é isso que mantém o score justo entre idiomas.
+
+---
+
+## Idiomas
+
+Conteúdo em **inglês, português e espanhol** (detecção automática; os três conjuntos de padrões valem para qualquer prompt).
+A **interface está só em inglês** — `i18n.ts` tem um único dicionário `EN`. O suporte multilíngue é do conteúdo, não da UI.
+
+---
+
+## Limitações conhecidas (honestas, não maquiadas)
+
+1. **A premissa central não foi validada.** Nada prova que nota alta → resposta melhor da IA. O dataset é calibrado contra o comportamento da própria ferramenta, não contra qualidade real. Este é o item nº 1 de `decision-parked.md` §4.
+2. **Download de ~140 MiB** no primeiro uso do passe semântico (modelo 112,8 + tokenizer 16,3 + sentencepiece 4,8 + WASM 5,8 MiB). Fica fora do caminho crítico e é uma vez por navegador, mas existe. Um modelo só pt/en/es com vocabulário de ~50k tokens o cortaria para ~49 MiB (2,9×) ao custo de treinar modelo próprio. **Não** há ganho por quantização: `q4` é 380 MiB, maior que o `int8` atual.
+3. **A otimização por LLM está desligada.** O painel de Settings coleta chaves de API que hoje não são usadas por ninguém.
+4. **Sem contas, sem histórico, sem métrica de retenção.** Portanto não há dado de uso — a instrumentação de funil existe (`src/analytics/`) mas é no-op até um provedor ser configurado (`.env.example`).
+5. **Sem página indexável além da raiz.** `meta description` e Open Graph passaram a existir nesta sessão, mas não há páginas por intenção de busca.
+
+---
+
+## Como rodar
+
+```bash
+cd frontend
+npm install
+npm run dev      # http://localhost:5173
+```
+
+| Comando | Descrição |
+|---------|-----------|
+| `npm run dev` | Dev server |
+| `npm run build` | Checagem de tipos + build → `dist/` |
+| `npm test` | Vitest (watch) |
+| `npm run test:prompts` | Regressão — tier core (11 prompts) |
+| `TEST_TIER=full npm run test:prompts` | Regressão — tier completo (83 prompts) |
+| `npm run test:e2e` | Smoke test no browser (precisa do app rodando) |
 | `npm run lint` | ESLint |
-| `npm run i18n:ci` | i18n key validation |
+| `npm run i18n:ci` | Validação de chaves i18n |
 
-For full regression suite: `TEST_TIER=full npm run test:prompts`
+Aplicar recalibração do dataset (só após mudança **intencional** — ver aviso no próprio script):
 
----
-
-## ✅ Completed Features
-
-| Feature | Status | Implementation |
-|---------|--------|----------------|
-| Prompt Anatomy Detection | ✅ | Client-side regex patterns (EN/PT/ES) |
-| Quality Scoring | ✅ | 8-dimension scoring algorithm |
-| Component Highlighting | ✅ | Real-time visual highlighting with color-coded spans |
-| Mouse-following Tooltip | ✅ | Tracks cursor over highlighted segments, smart edge-flip |
-| Component Checklist | ✅ | 3-column grid, absent items show dashed border + `+` icon |
-| Unified Results Block | ✅ | ScoreCard + Checklist merged in one card, Anatomy above |
-| Horizontal ScoreCard | ✅ | Grade (30%) left / recommendation text (70%) right |
-| Staggered Results Reveal | ✅ | Framer Motion sequential animation of result sections |
-| Pre-filled Demo Prompt | ✅ | B-grade example loaded on first visit, ready to analyze |
-| LLM Optimization | ✅ | OpenAI & Anthropic integration |
-| Settings Management | ✅ | localStorage for API keys |
-| Templates | ✅ | 4 professional templates |
-| Performance Optimization | ✅ | Memoization + monitoring |
-| Deployment Configs | ✅ | Vercel, Netlify, GitHub Pages, Cloudflare Pages |
-
----
-
-## UI Layout — Results Section
-
-The results section follows a narrative two-step reveal:
-
-```
-┌─────────────────────────────────────┐
-│  Anatomy                  7 detected │  ← Step 1: observation
-│  [color-coded prompt text]           │    mouse tooltip follows cursor
-│  [component legend]                  │
-└─────────────────────────────────────┘
-
-┌─────────────────────────────────────┐
-│  Quality Score                       │  ← Step 2: verdict + audit
-│  ┌──────────┬───────────────────┐   │    unified card, no double borders
-│  │   B      │ Top recommendation │   │
-│  │ (grade)  │ (text, 70% width) │   │
-│  └──────────┴───────────────────┘   │
-│  ─────────────────────────────────  │
-│  Component Checklist        7/9     │
-│  ┌──────┐ ┌──────┐ ┌──────┐        │
-│  │Role ✓│ │Ctx ✓ │ │Task ✓│        │
-│  │Ex  ✓ │ │Const✓│ │NC  + │ ←dashed│
-│  │Fmt ✓ │ │Aud ✓ │ │Tone+ │ ←dashed│
-│  └──────┘ └──────┘ └──────┘        │
-│  Anatomy Coverage ████████░░  78%   │
-└─────────────────────────────────────┘
-```
-
-**Key design decisions:**
-- `AnatomyView` keeps its own card (bg + border + rounded)
-- `ScoreCard` and `ComponentsChecklist` are stripped of card wrappers — `App.tsx` provides the shared outer card with `overflow-hidden`
-- The vertical divider in ScoreCard uses a gradient fade (`transparent → gradeColor → transparent`) matching the letter grade color
-- `ComponentsChecklist` uses `grid-cols-3 content-start` to prevent items from stretching vertically
-
----
-
-## Tech Stack
-
-| Technology | Purpose |
-|------------|---------|
-| **React 19** | UI framework |
-| **TypeScript** | Type safety |
-| **Vite 7** | Build tool + dev server |
-| **Tailwind CSS 4** | Styling + dark theme |
-| **Framer Motion** | Smooth animations + stagger reveals |
-| **OpenAI SDK** | GPT-4o optimization |
-| **Anthropic SDK** | Claude 3.5 Sonnet optimization |
-
----
-
-## Project Structure
-
-```
-skelica/
-└── frontend/
-    ├── src/
-    │   ├── App.tsx                  # AppContent (nav + routing) + MainApp (analysis flow)
-    │   ├── components/
-    │   │   ├── AnatomyView.tsx      # Highlighted prompt + mouse-following tooltip
-    │   │   ├── ScoreCard.tsx        # Horizontal grade/recommendation card (no border)
-    │   │   ├── ComponentsChecklist.tsx  # 3-col grid checklist (no border)
-    │   │   ├── PromptInput.tsx      # Textarea with copy + analyze actions
-    │   │   ├── Logo.tsx
-    │   │   ├── SettingsPanel.tsx
-    │   │   └── ErrorBoundary.tsx
-    │   ├── core/                    # Analysis engine
-    │   │   ├── anatomyParser.ts     # Component detection (overlap-safe)
-    │   │   ├── scorer.ts            # 8-dimension weighted scoring
-    │   │   └── patterns/
-    │   │       ├── english.ts
-    │   │       ├── portuguese.ts
-    │   │       └── spanish.ts
-    │   ├── llm/                     # LLM clients (code-split via Vite)
-    │   │   ├── openaiClient.ts
-    │   │   ├── anthropicClient.ts
-    │   │   └── factory.ts
-    │   ├── hooks/
-    │   │   └── usePromptAnalysis.ts # Full analysis orchestration
-    │   ├── adapters/                # AnatomyResult/ScoreResult → API types
-    │   ├── config/settings.ts       # localStorage API key store
-    │   ├── data/validation-prompts.json  # Golden test dataset
-    │   ├── pages/AboutPage.tsx
-    │   └── i18n.ts                  # en/pt/es translations
-    ├── vercel.json
-    ├── netlify.toml
-    └── .github/workflows/deploy.yml
+```bash
+npx tsx scripts/calibrate-validation-prompts.ts            # dry-run (padrão)
+npx tsx scripts/calibrate-validation-prompts.ts --apply    # escreve
 ```
 
 ---
 
-## Performance
+## Documentos relacionados
 
-| Metric | Target | Status |
-|--------|--------|--------|
-| Analysis time (< 500 chars) | < 100ms | ✅ |
-| Analysis time (2000+ chars) | < 300ms | ✅ |
-| Main bundle size | < 500KB | ✅ ~450KB |
-| LLM SDK code splitting | Yes | ✅ |
-| Result caching (LRU) | 50 entries | ✅ |
-| Pattern pre-compilation | Yes | ✅ |
-
----
-
-## Deployment
-
-Deploy to any static hosting service:
-
-- **Cloudflare Pages**: Auto-deploy via `.github/workflows/deploy.yml` on push to `main`
-- **Vercel**: `vercel deploy`
-- **Netlify**: `netlify deploy --prod`
-- **GitHub Pages**: Push to main (auto-deploy via Actions)
-
-All configs include SPA redirect for client-side routing.
-
----
-
-## API Keys Configuration
-
-Users configure their own API keys in the app:
-
-1. Click **Settings** in the nav
-2. Enter OpenAI and/or Anthropic API key
-3. Keys stored in browser `localStorage` — never sent to any backend
-4. Keys sent only to respective LLM providers directly from the client
-
----
-
-## Components Detected (9 total)
-
-| Component | Label | Description |
-|-----------|-------|-------------|
-| `role` | Role / Persona | Who the AI should act as |
-| `context` | Context | Background and situational information |
-| `instruction` | Instruction | Main task or action to perform |
-| `constraint` | Constraints | Positive rules and limitations |
-| `negative_constraint` | Negative Constraints | What to avoid or exclude |
-| `example` | Examples | Sample inputs, outputs, or demonstrations |
-| `format` | Output Format | Structure or format of the expected response |
-| `audience` | Target Audience | Who will read or use the output |
-| `tone` | Tone / Style | Communication style or voice |
-
----
-
-## Quality Scoring Dimensions (8 total)
-
-| Dimension | Weight | Description |
-|-----------|--------|-------------|
-| Clarity | 15% | Clear and unambiguous language |
-| Specificity | 12% | Concrete, measurable requirements |
-| Completeness | 15% | All necessary components present |
-| Structure | 10% | Well-organized with sections/lists |
-| Effectiveness | 12% | Guides AI toward the desired output |
-| Actionability | 12% | Clear action verbs and tasks |
-| Accuracy | 12% | Well-defined, unambiguous task |
-| Relevance | 12% | Focused on the stated goal |
-
-Grades: **A+** (≥95) → **A** (≥90) → **B** (≥75) → **C** (≥60) → **D** (≥40) → **F** (<40)
-
----
-
-## Multilingual Support
-
-- **English** (`en`) — primary
-- **Portuguese** (`pt`)
-- **Spanish** (`es`)
-
-Language is auto-detected based on prompt content. All UI strings use `t('key')` from `i18n.ts`.
-
----
-
-## Demo Prompt (default on load)
-
-The app loads with a pre-filled prompt designed to score **B grade** and demonstrate all major components:
-
-```
-You are an expert UX researcher and product strategist...
-
-## Context
-We are redesigning the onboarding flow for a fintech app...
-
-## Task
-Analyze the onboarding screen designs and identify the top 3 friction points...
-
-For example: if a screen has a long form, suggest progressive disclosure...
-
-## Constraints
-- Each solution must be implementable in under 2 weeks by a team of 2 developers.
-- Do not include third-party integrations or any changes that require backend work.
-
-## Output Format
-Structure each friction point as follows:
-1. Issue + severity (1–5)
-2. Root cause
-3. Proposed fix
-4. Success metric
-
-## Audience
-Target audience: product designers and frontend engineers...
-
-Tone: professional but accessible — avoid jargon without explanation.
-```
-
-This demonstrates role, context, instruction, example, constraints, output format, and audience in a structured, readable format.
-
----
-
-## Known Issues
-
-None currently. All core features working as expected.
-
----
-
-## Next Steps
-
-- [ ] Add more language support
-- [ ] Expand template library
-- [ ] Add export/import functionality
-- [ ] Add prompt history
-- [ ] Add collaborative features
-- [ ] Improve recommendation text readability (wall of text in ScoreCard)
+| Documento | Conteúdo |
+|-----------|----------|
+| [`decision-parked.md`](./decision-parked.md) | Por que parou e o que justificaria reabrir |
+| [`analysis-engine-architecture.md`](./analysis-engine-architecture.md) | Arquitetura do motor, medições e migração restante |
+| [`product-strategy.md`](./product-strategy.md) | ICPs, escada de valor, créditos vs chave própria, time |
+| [`monetization-analysis.md`](./monetization-analysis.md) | Diagnóstico técnico original |
+| [`../research/prompt-tooling-monetization-2026.md`](../research/prompt-tooling-monetization-2026.md) | Pesquisa de mercado com fontes |

@@ -1,5 +1,13 @@
 # Skelica — Prompt Anatomy & Optimizer
 
+> **Status: PARQUE (parked).** O app continua no ar e funcional em
+> [skelica.pages.dev](https://skelica.pages.dev), mas **não está em desenvolvimento ativo**.
+> O motivo da decisão, e o que justificaria reabrir, está em
+> [`docs/project/decision-parked.md`](./docs/project/decision-parked.md). Deploys automáticos
+> foram desligados; a infraestrutura pendente de descomissionamento está em
+> [`docs/project/decommission-infra.md`](./docs/project/decommission-infra.md).
+> Estado técnico verificado em [`docs/project/status.md`](./docs/project/status.md).
+
 Skelica dissects your AI prompts to reveal what's strong and what needs sharpening. It analyzes prompt structure, calculates quality scores, and suggests improvements — helping you write prompts that get better results.
 
 ## What It Does
@@ -10,7 +18,7 @@ Paste any prompt and Skelica will:
 2. **Score Quality** — Get a multi-dimensional quality score (clarity, specificity, completeness, structure, actionability)
 3. **Highlight Components** — See your prompt with color-coded annotations showing each detected element
 4. **Suggest Improvements** — Receive actionable recommendations for missing or weak components
-5. **Optimize Prompts** — Generate an improved version of your prompt using LLM integration
+5. **Hand off to fix it** — Send the annotated prompt to ChatGPT or Claude with the missing components spelled out (one click, no API key needed)
 
 ## Features
 
@@ -188,7 +196,8 @@ Toda a documentação está organizada em [`docs/`](./docs/). Ver [docs/README.m
 
 ## Status
 
-See [docs/project/status.md](./docs/project/status.md) for current development status and known issues.
+Parked. See [docs/project/decision-parked.md](./docs/project/decision-parked.md) for why, and
+[docs/project/status.md](./docs/project/status.md) for the verified current state and known limitations.
 
 ## License
 

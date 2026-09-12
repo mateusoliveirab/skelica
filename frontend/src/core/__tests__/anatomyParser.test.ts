@@ -5,6 +5,14 @@
 import { describe, it, expect } from 'vitest';
 import { AnatomyParser } from '../anatomyParser';
 
+/**
+ * The 9-component taxonomy reports prohibitions ("Do not use X", "Avoid Y", "Não use Z")
+ * as their own `negative_constraint` component. These tests assert the constraint *family*
+ * so they express intent ("a constraint was detected") without pinning the exact sub-type.
+ */
+const CONSTRAINT_FAMILY = ['constraint', 'negative_constraint'];
+const isConstraint = (componentType: string) => CONSTRAINT_FAMILY.includes(componentType);
+
 describe('AnatomyParser', () => {
   const parser = new AnatomyParser();
 
@@ -107,20 +115,28 @@ describe('AnatomyParser', () => {
 
     it('should detect constraint component', () => {
       const result = parser.parse('Write a function. Do not use built-in methods.');
-      const constraintComponents = result.components.filter((c) => c.componentType === 'constraint');
+      const constraintComponents = result.components.filter((c) => isConstraint(c.componentType));
       expect(constraintComponents.length).toBeGreaterThan(0);
     });
 
     it('should detect constraint with "avoid" pattern', () => {
       const result = parser.parse('Write code. Avoid using external libraries.');
-      const constraintComponents = result.components.filter((c) => c.componentType === 'constraint');
+      const constraintComponents = result.components.filter((c) => isConstraint(c.componentType));
       expect(constraintComponents.length).toBeGreaterThan(0);
     });
 
     it('should detect constraint with "must not" pattern', () => {
       const result = parser.parse('The solution must not exceed 100 lines of code.');
-      const constraintComponents = result.components.filter((c) => c.componentType === 'constraint');
+      const constraintComponents = result.components.filter((c) => isConstraint(c.componentType));
       expect(constraintComponents.length).toBeGreaterThan(0);
+    });
+
+    it('distinguishes positive constraints from negative ones', () => {
+      const positive = parser.parse('The response must be under 200 words.');
+      expect(positive.components.some((c) => c.componentType === 'constraint')).toBe(true);
+
+      const negative = parser.parse('Do not use external libraries.');
+      expect(negative.components.some((c) => c.componentType === 'negative_constraint')).toBe(true);
     });
 
     it('should detect constraint with length limit', () => {
@@ -602,7 +618,7 @@ Output as JSON.`);
       // According to CONTAINMENT_ALLOWED, instruction can contain constraint
       const result = parser.parse('Please write a function. Do not use loops.');
       const instructionComponents = result.components.filter((c) => c.componentType === 'instruction');
-      const constraintComponents = result.components.filter((c) => c.componentType === 'constraint');
+      const constraintComponents = result.components.filter((c) => isConstraint(c.componentType));
       
       expect(instructionComponents.length).toBeGreaterThan(0);
       expect(constraintComponents.length).toBeGreaterThan(0);
@@ -612,7 +628,7 @@ Output as JSON.`);
       // According to CONTAINMENT_ALLOWED, context can contain constraint
       const result = parser.parse('Given that we are building a web app, do not use external libraries.');
       const contextComponents = result.components.filter((c) => c.componentType === 'context');
-      const constraintComponents = result.components.filter((c) => c.componentType === 'constraint');
+      const constraintComponents = result.components.filter((c) => isConstraint(c.componentType));
       
       // Both should be detected
       expect(contextComponents.length).toBeGreaterThan(0);
@@ -709,7 +725,7 @@ Write a function.`);
 
       it('should detect Portuguese constraint component', () => {
         const result = parser.parse('Escreva uma função. Não use métodos nativos.');
-        const constraintComponents = result.components.filter((c) => c.componentType === 'constraint');
+        const constraintComponents = result.components.filter((c) => isConstraint(c.componentType));
         expect(constraintComponents.length).toBeGreaterThan(0);
       });
 

@@ -136,6 +136,27 @@ export interface StaticAnalysis {
 /**
  * StaticAnalyzer - Analyzes prompt structure without LLM
  */
+/** Confidence above which a detected component counts as present. */
+const COMPONENT_PRESENT_THRESHOLD = 0.5;
+
+/**
+ * Which components the parser detected. Language-independent, unlike the keyword indicators
+ * on `StaticAnalysis`, and therefore the right input for a score that must be fair across
+ * languages.
+ */
+interface ComponentPresence {
+  role: boolean;
+  context: boolean;
+  instruction: boolean;
+  constraint: boolean;
+  example: boolean;
+  format: boolean;
+  audience: boolean;
+  tone: boolean;
+}
+
+const clamp01 = (value: number) => Math.max(0, Math.min(1, value));
+
 export class StaticAnalyzer {
   analyze(prompt: string): StaticAnalysis {
     // Handle null/undefined input
@@ -187,7 +208,7 @@ export class StaticAnalyzer {
     }
 
     const hasExplicitFormat = Object.values(formatsDetected).some(v => v);
-    const primaryFormat = Object.entries(formatsDetected).find(([_, v]) => v)?.[0] || null;
+    const primaryFormat = Object.entries(formatsDetected).find(([, detected]) => detected)?.[0] || null;
 
     return {
       formatsDetected,
@@ -340,16 +361,19 @@ export class Scorer {
 
   private _calculateDimensions(prompt: string, staticAnalysis: StaticAnalysis, detectedComponents: Record<string, number> = {}): DimensionScore[] {
     const dimensions: DimensionScore[] = [];
+    // Resolved once: every dimension reads presence from the parser's language-independent
+    // detection instead of from English keyword lists.
+    const presence = this._presence(detectedComponents);
 
     // Clarity
-    const clarityScore = this._scoreClarity(prompt, staticAnalysis);
+    const clarityScore = this._scoreClarity(staticAnalysis, presence);
     dimensions.push({
       dimension: 'clarity',
       score: clarityScore,
       weight: WEIGHT_CONFIG.clarity,
       maxScore: 1.0,
       minScore: 0.0,
-      issues: this._getClarityIssues(staticAnalysis),
+      issues: this._getClarityIssues(staticAnalysis, presence),
       strengths: [],
       improvementActions: [],
       weightedScore: clarityScore * WEIGHT_CONFIG.clarity,
@@ -358,7 +382,7 @@ export class Scorer {
     });
 
     // Specificity
-    const specificityScore = this._scoreSpecificity(prompt, staticAnalysis);
+    const specificityScore = this._scoreSpecificity(prompt, staticAnalysis, presence);
     dimensions.push({
       dimension: 'specificity',
       score: specificityScore,
@@ -374,7 +398,7 @@ export class Scorer {
     });
 
     // Completeness
-    const completenessScore = this._scoreCompleteness(prompt, staticAnalysis, detectedComponents);
+    const completenessScore = this._scoreCompleteness(staticAnalysis, presence);
     dimensions.push({
       dimension: 'completeness',
       score: completenessScore,
@@ -406,7 +430,7 @@ export class Scorer {
     });
 
     // Effectiveness
-    const effectivenessScore = this._scoreEffectiveness(prompt, staticAnalysis);
+    const effectivenessScore = this._scoreEffectiveness(staticAnalysis, presence);
     dimensions.push({
       dimension: 'effectiveness',
       score: effectivenessScore,
@@ -422,7 +446,7 @@ export class Scorer {
     });
 
     // Actionability
-    const actionabilityScore = this._scoreActionability(prompt, staticAnalysis);
+    const actionabilityScore = this._scoreActionability(prompt, staticAnalysis, presence);
     dimensions.push({
       dimension: 'actionability',
       score: actionabilityScore,
@@ -438,7 +462,7 @@ export class Scorer {
     });
 
     // Accuracy
-    const accuracyScore = this._scoreAccuracy(prompt, staticAnalysis);
+    const accuracyScore = this._scoreAccuracy(staticAnalysis, presence);
     dimensions.push({
       dimension: 'accuracy',
       score: accuracyScore,
@@ -454,7 +478,7 @@ export class Scorer {
     });
 
     // Relevance
-    const relevanceScore = this._scoreRelevance(prompt, staticAnalysis);
+    const relevanceScore = this._scoreRelevance(prompt, staticAnalysis, presence);
     dimensions.push({
       dimension: 'relevance',
       score: relevanceScore,
@@ -472,151 +496,146 @@ export class Scorer {
     return dimensions;
   }
 
-  private _scoreClarity(prompt: string, analysis: StaticAnalysis): number {
-    const words = analysis.tokenCount.words;
-    let score = 0.2;
+  /**
+   * Component presence derived from the parser's detection.
+   *
+   * The dimensions below used to infer presence from English keyword lists
+   * (`roleIndicators`, `formatIndicators`, ...), which is why a Portuguese prompt scored
+   * ~0.22 lower than an English prompt the dataset rates the same. Detected components are
+   * the same signal in every language — see engine-invariants.test.ts — so they replace the
+   * lexical proxies. `null` means the caller supplied no component map and the legacy
+   * heuristics are used.
+   */
+  private _presence(detected: Record<string, number>): ComponentPresence | null {
+    if (Object.keys(detected).length === 0) return null;
 
-    // Word count scoring
-    if (words < 5) {
-      score -= 0.15;
-    } else if (words >= 100) {
-      // Long conversational prompts with detail
-      score += 0.3;
-    } else if (words >= 20) {
-      score += 0.25;
-    } else if (words >= 10) {
-      score += 0.15;
-    }
+    const above = (type: string) => (detected[type] ?? 0) > COMPONENT_PRESENT_THRESHOLD;
 
-    // Role presence
-    if (analysis.roleIndicators.hasRole) {
-      score += 0.2;
-    } else {
-      score -= 0.1;
-    }
-
-    // Structure bonus (formal or conversational)
-    if (analysis.structureElements.hasSections) {
-      score += 0.15;
-    } else if (analysis.tokenCount.sentences >= 5) {
-      // Conversational prompts with multiple sentences
-      score += 0.1;
-    }
-
-    // Ambiguous words penalty (but less harsh for conversational style)
-    const ambiguousWords = (prompt.match(/\b(something|thing|whatever)\b/gi) || []).length;
-    // Don't penalize "stuff" in conversational context like "type stuff"
-    const contextualStuff = (prompt.match(/\b(type|kind|sort)\s+(?:of\s+)?stuff\b/gi) || []).length;
-    const actualAmbiguous = ambiguousWords - contextualStuff;
-    score -= Math.min(actualAmbiguous * 0.1, 0.2);
-
-    return Math.max(0.0, Math.min(1.0, score));
+    return {
+      role: above('role'),
+      context: above('context'),
+      instruction: above('instruction'),
+      // A prohibition ("Do not use X") constrains the output as much as a positive rule,
+      // and the parser reports it as its own component type.
+      constraint: above('constraint') || above('negative_constraint'),
+      example: above('example'),
+      format: above('format'),
+      audience: above('audience'),
+      tone: above('tone'),
+    };
   }
 
-  private _scoreSpecificity(prompt: string, analysis: StaticAnalysis): number {
+  private _scoreClarity(analysis: StaticAnalysis, presence: ComponentPresence | null): number {
     const words = analysis.tokenCount.words;
     let score = 0.2;
 
-    // Word count penalty
-    if (words < 5) {
-      score -= 0.15;
-    }
+    if (words < 5) score -= 0.15;
+    else if (words >= 100) score += 0.3;
+    else if (words >= 20) score += 0.25;
+    else if (words >= 10) score += 0.15;
 
-    // Format specification bonus
-    if (analysis.formatIndicators.hasExplicitFormat) {
-      score += 0.25;
-    }
+    const hasRole = presence ? presence.role : analysis.roleIndicators.hasRole;
+    score += hasRole ? 0.2 : -0.1;
 
-    // Constraints bonus
-    if (analysis.constraintIndicators.hasConstraints) {
-      score += 0.2;
-    }
+    if (analysis.structureElements.hasSections) score += 0.15;
+    else if (analysis.tokenCount.sentences >= 5) score += 0.1;
 
-    // Numbers bonus (indicates specificity)
+    // Vagueness is read from the component signal instead of a word list: a prompt that sets
+    // neither background nor any boundary is vague in any language.
+    const hasContext = presence ? presence.context : analysis.constraintIndicators.hasConstraints;
+    const hasBoundary = presence
+      ? presence.constraint || presence.format
+      : analysis.formatIndicators.hasExplicitFormat;
+    if (!hasContext && !hasBoundary) score -= 0.1;
+
+    return clamp01(score);
+  }
+
+  private _scoreSpecificity(prompt: string, analysis: StaticAnalysis, presence: ComponentPresence | null): number {
+    const words = analysis.tokenCount.words;
+    let score = 0.2;
+
+    if (words < 5) score -= 0.15;
+
+    const hasFormat = presence ? presence.format : analysis.formatIndicators.hasExplicitFormat;
+    if (hasFormat) score += 0.25;
+
+    const hasConstraints = presence ? presence.constraint : analysis.constraintIndicators.hasConstraints;
+    if (hasConstraints) score += 0.2;
+
+    // Concrete numbers are a language-independent specificity signal.
     const numbers = (prompt.match(/\d+/g) || []).length;
     score += Math.min(numbers * 0.05, 0.25);
 
-    return Math.max(0.0, Math.min(1.0, score));
+    return clamp01(score);
   }
 
-  private _scoreCompleteness(_prompt: string, analysis: StaticAnalysis, detectedComponents: Record<string, number> = {}): number {
+  private _scoreCompleteness(analysis: StaticAnalysis, presence: ComponentPresence | null): number {
     const words = analysis.tokenCount.words;
     let score = 0.1;
 
-    // Word count penalty
-    if (words < 5) {
-      score -= 0.1;
-    }
+    if (words < 5) score -= 0.1;
 
-    const SEMANTIC_THRESHOLD = 0.5;
-    const useSemanticData = Object.keys(detectedComponents).length > 0;
-
-    if (useSemanticData) {
-      // Use semantic classifier confidence scores to determine component presence
-      // Each of the 8 components contributes equally (max 0.8 total, then bonuses)
-      const componentWeights: Record<string, number> = {
-        role: 0.2,
-        context: 0.1,
-        instruction: 0.2,
-        constraint: 0.15,
-        example: 0.15,
-        format: 0.15,
-        audience: 0.05,
-        tone: 0.05,
-      };
+    if (presence) {
+      const weights: Array<[keyof ComponentPresence, number]> = [
+        ['role', 0.2],
+        ['context', 0.1],
+        ['instruction', 0.2],
+        ['constraint', 0.15],
+        ['example', 0.15],
+        ['format', 0.15],
+        ['audience', 0.05],
+        ['tone', 0.05],
+      ];
 
       let componentsPresent = 0;
-      for (const [comp, weight] of Object.entries(componentWeights)) {
-        const confidence = detectedComponents[comp] ?? 0;
-        if (confidence > SEMANTIC_THRESHOLD) {
+      for (const [type, weight] of weights) {
+        if (presence[type]) {
           score += weight;
           componentsPresent++;
         }
       }
 
-      // Bonus for comprehensive prompts (4+ components)
-      if (componentsPresent >= 6) {
-        score += 0.1;
-      } else if (componentsPresent >= 4) {
-        score += 0.05;
-      }
-    } else {
-      // Fallback: regex-based heuristics
-      let componentsPresent = 0;
+      if (componentsPresent >= 6) score += 0.1;
+      else if (componentsPresent >= 4) score += 0.05;
 
-      if (analysis.roleIndicators.hasRole) {
-        score += 0.2;
-        componentsPresent++;
-      }
-
-      if (analysis.formatIndicators.hasExplicitFormat) {
-        score += 0.15;
-        componentsPresent++;
-      }
-
-      if (analysis.constraintIndicators.hasConstraints) {
-        score += 0.15;
-        componentsPresent++;
-      }
-
-      if (analysis.exampleIndicators.hasExamples) {
-        score += 0.2;
-        componentsPresent++;
-      }
-
-      if (analysis.structureElements.paragraphCount >= 2 || words >= 100) {
-        score += 0.1;
-      }
-
-      // Bonus for having multiple components (comprehensive prompt)
-      if (componentsPresent >= 4) {
-        score += 0.2;
-      } else if (componentsPresent >= 3) {
-        score += 0.1;
-      }
+      return clamp01(score);
     }
 
-    return Math.max(0.0, Math.min(1.0, score));
+    // Fallback for callers that supply no component map.
+    let componentsPresent = 0;
+
+    if (analysis.roleIndicators.hasRole) {
+      score += 0.2;
+      componentsPresent++;
+    }
+
+    if (analysis.formatIndicators.hasExplicitFormat) {
+      score += 0.15;
+      componentsPresent++;
+    }
+
+    if (analysis.constraintIndicators.hasConstraints) {
+      score += 0.15;
+      componentsPresent++;
+    }
+
+    if (analysis.exampleIndicators.hasExamples) {
+      score += 0.2;
+      componentsPresent++;
+    }
+
+    if (analysis.structureElements.paragraphCount >= 2 || words >= 100) {
+      score += 0.1;
+    }
+
+    if (componentsPresent >= 4) {
+      score += 0.2;
+    } else if (componentsPresent >= 3) {
+      score += 0.1;
+    }
+
+    return clamp01(score);
   }
 
   private _scoreStructure(analysis: StaticAnalysis): number {
@@ -624,28 +643,23 @@ export class Scorer {
     const sentences = analysis.tokenCount.sentences;
     let score = 0.1;
 
-    // Word count penalty
     if (words < 5) {
       score -= 0.1;
     }
 
     const structure = analysis.structureElements;
 
-    // Formal structure element bonuses
     if (structure.hasSections) score += 0.25;
     if (structure.hasBulletPoints) score += 0.2;
     if (structure.hasNumberedList) score += 0.2;
     if (structure.hasCodeBlocks) score += 0.15;
-    
-    // Conversational structure bonuses
+
     if (structure.paragraphCount >= 3) {
-      score += 0.2; // Well-organized conversational prompt
+      score += 0.2;
     } else if (structure.paragraphCount === 2) {
       score += 0.15;
     } else if (structure.paragraphCount === 1) {
-      // Single paragraph - check if it's detailed and well-structured
       if (words >= 150 && sentences >= 8) {
-        // Long detailed conversational prompt with multiple sentences
         score += 0.25;
       } else if (words >= 100 && sentences >= 6) {
         score += 0.2;
@@ -656,146 +670,112 @@ export class Scorer {
       }
     }
 
-    return Math.max(0.0, Math.min(1.0, score));
+    return clamp01(score);
   }
 
-  private _scoreEffectiveness(_prompt: string, analysis: StaticAnalysis): number {
+  private _scoreEffectiveness(analysis: StaticAnalysis, presence: ComponentPresence | null): number {
     const words = analysis.tokenCount.words;
     let score = 0.2;
 
-    // Word count scoring - effectiveness requires sufficient detail
-    if (words < 5) {
-      score -= 0.15;
-    } else if (words >= 20) {
-      score += 0.15;
-    } else if (words >= 10) {
-      score += 0.1;
-    }
+    if (words < 5) score -= 0.15;
+    else if (words >= 20) score += 0.15;
+    else if (words >= 10) score += 0.1;
 
-    // Role definition helps effectiveness
-    if (analysis.roleIndicators.hasRole) {
-      score += 0.2;
-    }
+    const has = (type: keyof ComponentPresence, fallback: boolean) =>
+      presence ? presence[type] : fallback;
 
-    // Clear output format improves effectiveness
-    if (analysis.formatIndicators.hasExplicitFormat) {
-      score += 0.15;
-    }
+    if (has('role', analysis.roleIndicators.hasRole)) score += 0.2;
+    if (has('format', analysis.formatIndicators.hasExplicitFormat)) score += 0.15;
+    if (has('constraint', analysis.constraintIndicators.hasConstraints)) score += 0.15;
+    if (has('example', analysis.exampleIndicators.hasExamples)) score += 0.15;
 
-    // Constraints help focus the response
-    if (analysis.constraintIndicators.hasConstraints) {
-      score += 0.15;
-    }
-
-    // Examples demonstrate expected outcomes
-    if (analysis.exampleIndicators.hasExamples) {
-      score += 0.15;
-    }
-
-    // Good structure improves effectiveness
     if (analysis.structureElements.hasSections || analysis.structureElements.hasBulletPoints) {
       score += 0.1;
     }
 
-    return Math.max(0.0, Math.min(1.0, score));
+    return clamp01(score);
   }
 
-  private _scoreActionability(prompt: string, analysis: StaticAnalysis): number {
+  private _scoreActionability(prompt: string, analysis: StaticAnalysis, presence: ComponentPresence | null): number {
     const words = analysis.tokenCount.words;
     let score = 0.2;
 
-    // Word count penalty
-    if (words < 5) {
-      score -= 0.15;
+    if (words < 5) score -= 0.15;
+
+    if (presence) {
+      // A detected instruction is the language-independent evidence that the prompt asks for
+      // something. The old English verb list scored Portuguese prompts as if they contained
+      // no task at all.
+      if (presence.instruction) score += 0.3;
+    } else {
+      const actionVerbs = (
+        prompt.match(/\b(write|create|generate|analyze|explain|list|describe|implement|design|build)\b/gi) || []
+      ).length;
+      score += Math.min(actionVerbs * 0.15, 0.4);
     }
 
-    // Action verbs bonus
-    const actionVerbs = (
-      prompt.match(/\b(write|create|generate|analyze|explain|list|describe|implement|design|build)\b/gi) || []
-    ).length;
-    score += Math.min(actionVerbs * 0.15, 0.4);
+    const numbers = (prompt.match(/\d+/g) || []).length;
+    score += Math.min(numbers * 0.05, 0.15);
 
-    // Examples bonus
-    if (analysis.exampleIndicators.hasExamples) {
-      score += 0.15;
-    }
+    const hasExample = presence ? presence.example : analysis.exampleIndicators.hasExamples;
+    if (hasExample) score += 0.15;
 
-    return Math.max(0.0, Math.min(1.0, score));
+    return clamp01(score);
   }
 
-  private _scoreAccuracy(_prompt: string, analysis: StaticAnalysis): number {
+  private _scoreAccuracy(analysis: StaticAnalysis, presence: ComponentPresence | null): number {
     const words = analysis.tokenCount.words;
     let score = 0.2;
 
-    // Word count scoring
-    if (words < 5) {
-      score -= 0.1;
-    } else if (words >= 20) {
-      score += 0.2;
-    } else if (words >= 10) {
-      score += 0.1;
-    }
+    if (words < 5) score -= 0.1;
+    else if (words >= 20) score += 0.2;
+    else if (words >= 10) score += 0.1;
 
-    // Component presence bonuses
-    if (analysis.roleIndicators.hasRole) {
-      score += 0.2;
-    }
+    const has = (type: keyof ComponentPresence, fallback: boolean) =>
+      presence ? presence[type] : fallback;
 
-    if (analysis.exampleIndicators.hasExamples) {
-      score += 0.2;
-    }
+    if (has('role', analysis.roleIndicators.hasRole)) score += 0.2;
+    if (has('example', analysis.exampleIndicators.hasExamples)) score += 0.2;
+    if (has('constraint', analysis.constraintIndicators.hasConstraints)) score += 0.15;
 
-    if (analysis.constraintIndicators.hasConstraints) {
-      score += 0.15;
-    }
-
-    return Math.max(0.0, Math.min(1.0, score));
+    return clamp01(score);
   }
 
-  private _scoreRelevance(prompt: string, analysis: StaticAnalysis): number {
+  private _scoreRelevance(prompt: string, analysis: StaticAnalysis, presence: ComponentPresence | null): number {
     const words = analysis.tokenCount.words;
     let score = 0.2;
 
-    // Word count scoring
-    if (words < 5) {
-      score -= 0.1;
-    } else if (words >= 15) {
-      score += 0.15;
+    if (words < 5) score -= 0.1;
+    else if (words >= 15) score += 0.15;
+
+    if (presence) {
+      if (presence.role) score += 0.2;
+      if (presence.instruction) score += 0.2;
+      if (presence.context) score += 0.15;
+    } else {
+      if (analysis.roleIndicators.hasRole) score += 0.2;
+      if (analysis.formatIndicators.hasExplicitFormat) score += 0.15;
+
+      const domainKeywords = (
+        prompt.match(/\b(api|database|server|client|user|system|data|function|class|method)\b/gi) || []
+      ).length;
+      score += Math.min(domainKeywords * 0.1, 0.25);
     }
 
-    // Role presence bonus
-    if (analysis.roleIndicators.hasRole) {
-      score += 0.2;
-    }
-
-    // Format specification bonus
-    if (analysis.formatIndicators.hasExplicitFormat) {
-      score += 0.15;
-    }
-
-    // Domain keywords bonus
-    const domainKeywords = (
-      prompt.match(/\b(api|database|server|client|user|system|data|function|class|method)\b/gi) || []
-    ).length;
-    score += Math.min(domainKeywords * 0.1, 0.25);
-
-    return Math.max(0.0, Math.min(1.0, score));
+    return clamp01(score);
   }
 
-  private _getClarityIssues(analysis: StaticAnalysis): string[] {
+  private _getClarityIssues(analysis: StaticAnalysis, presence: ComponentPresence | null): string[] {
     const issues: string[] = [];
 
-    if (!analysis.roleIndicators.hasRole) {
-      issues.push('Missing role definition');
-    }
+    const hasRole = presence ? presence.role : analysis.roleIndicators.hasRole;
+    if (!hasRole) issues.push('Missing role definition');
 
-    if (!analysis.formatIndicators.hasExplicitFormat) {
-      issues.push('No output format specified');
-    }
+    const hasFormat = presence ? presence.format : analysis.formatIndicators.hasExplicitFormat;
+    if (!hasFormat) issues.push('No output format specified');
 
-    if (!analysis.constraintIndicators.hasConstraints) {
-      issues.push('No constraints defined');
-    }
+    const hasConstraints = presence ? presence.constraint : analysis.constraintIndicators.hasConstraints;
+    if (!hasConstraints) issues.push('No constraints defined');
 
     return issues;
   }

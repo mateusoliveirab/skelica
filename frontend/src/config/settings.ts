@@ -49,7 +49,7 @@ export class SettingsStore {
       localStorage.setItem(this.STORAGE_KEY, JSON.stringify(updated));
     } catch (error) {
       if (import.meta.env.DEV) console.error('Failed to save settings to localStorage:', error);
-      throw new Error('Failed to save settings. Please check your browser storage permissions.');
+      throw new Error('Failed to save settings. Please check your browser storage permissions.', { cause: error });
     }
   }
 
@@ -160,7 +160,7 @@ export class SettingsStore {
       this.save(safeSettings);
     } catch (error) {
       if (import.meta.env.DEV) console.error('Failed to import settings:', error);
-      throw new Error('Invalid settings format');
+      throw new Error('Invalid settings format', { cause: error });
     }
   }
 }

@@ -4,9 +4,9 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-**Skelica** is a prompt anatomy analyzer and optimizer. It detects 9 structural components in AI prompts (role, context, instruction, constraint, negative_constraint, example, output format, audience, tone), calculates quality scores across 8 dimensions, and offers AI-powered optimization via OpenAI/Anthropic.
+**Skelica** is a prompt anatomy analyzer. It detects 9 structural components in AI prompts (role, context, instruction, constraint, negative_constraint, example, output format, audience, tone) and calculates quality scores across 8 dimensions.
 
-**Architecture:** Fully client-side static web app — no backend. All analysis and scoring runs in the browser using regex patterns. LLM integration is optional and calls providers directly from the client.
+**Architecture:** Fully client-side static web app — no backend. Analysis runs in two passes: multilingual **regex** (instant, free) and **multilingual embeddings** (loads in the background, then becomes authoritative). Scoring runs in the browser. Nothing is sent anywhere.
 
 ## Commands
 
@@ -33,28 +33,30 @@ E2E against production: `bash scripts/e2e.sh https://skelica.pages.dev`
 
 ```
 User Input → usePromptAnalysis hook
-  → AnatomyParser.parse() (regex detection, overlap-safe)
-  → Scorer.score() (8-dimension quality scoring)
-  → Adapters (convert to API format)
-  → UI (AnatomyView → unified [ScoreCard + ComponentsChecklist])
+  → Pass 1: AnatomyParser.parse()            (regex, all 3 languages, instant)
+  → Scorer.score() → UI renders              (the user sees a result here)
+  → Pass 2 (background): embeddings load → classifyComponents() per sentence
+  → AnatomyParser.parse(text, semanticMap)   (semantic overrides regex)
+  → Scorer.score() → UI updates
+  → Adapters bridge core types → API types
 ```
 
 ### Key Modules
 
 - **`core/anatomyParser.ts`** — Component detection via multilingual regex. Handles overlap resolution by priority and containment rules. Changes here require running `test:prompts`.
 - **`core/scorer.ts`** — Weighted scoring across 8 dimensions (clarity 15%, specificity 12%, completeness 15%, structure 10%, effectiveness 12%, actionability 12%, accuracy 12%, relevance 12%). Includes anti-pattern detection and grade calculation (A+ to F).
-- **`core/patterns.ts` + `patterns/`** — PatternLoader manages language-specific regex (en/pt/es). Patterns are pre-compiled and cached.
+- **`core/patterns.ts` + `patterns/`** — PatternLoader manages language-specific regex (en/pt/es). Patterns are pre-compiled and cached. **All three sets are collected for every prompt** and overlaps resolved once, with the detected language only breaking ties — so a language misdetection cannot change which components are found (locked by `engine-invariants.test.ts`).
+- **`core/segmentation.ts`** — the single sentence-splitting source (`Intl.Segmenter`), shared by the semantic pass and the parser. Producer and consumer must use it or lookups silently miss.
+- **`core/semanticClassifier.ts` + `core/worker.ts`** — multilingual embeddings + exemplar centroids. Loads in the **background** after the first result and is then the **authoritative** detector, able to override the regex (see `semantic-authority.test.ts`).
 - **`llm/factory.ts`** — Factory pattern for LLM clients. SDKs are code-split into separate chunks via Vite.
-- **`hooks/usePromptAnalysis.ts`** — Orchestrates the full analysis flow with performance tracking.
+- **`hooks/usePromptAnalysis.ts`** — Owns both passes: instant regex result, background model warm-up (`warmUp()`), then the semantic refinement. A failure in the semantic layer must never break `analyze()`.
 - **`adapters/`** — Bridge between core types (`AnatomyResult`, `ScoreResult`) and legacy API types (`AnalyzeResponse`, `ScoreResponse`).
 - **`config/settings.ts`** — localStorage-based settings store for API keys.
-- **`data/validation-prompts.json`** — Golden test dataset (~26 multilingual prompts) used for regression.
+- **`data/validation-prompts.json`** — Golden test dataset: **83** multilingual prompts (11 core / 72 full) with per-prompt `expected` component presence and a calibrated `scoreRange`. Re-baseline ranges only with `scripts/calibrate-validation-prompts.ts --apply`, never to hide a defect.
 
-### LLM Integration
+### LLM integration — implemented but NOT wired to the UI
 
-- API keys stored in `localStorage`, sent only to OpenAI/Anthropic directly
-- SDKs loaded dynamically (code splitting in `vite.config.ts`) to reduce initial bundle
-- OpenAI client includes rate limiting
+`llm/` contains working OpenAI and Anthropic clients (`optimizePrompt`) with tests. Nothing in the UI calls them, so the Settings panel collects API keys that are currently unused. Do not describe prompt *rewriting* as a shipped feature until it is reachable. The shipped "fix it" path is `AIButtons.tsx`, which hands the annotated prompt to ChatGPT/Claude.
 
 ## UI Layout — Results Section
 
@@ -91,34 +93,39 @@ Key `data-testid` attributes (do not rename without updating `e2e.sh`):
 - `anatomy-view` — AnatomyView root
 - `components-checklist` — ComponentsChecklist root
 
-CI layers:
-- **`e2e.yml`** — runs on PRs against `vite preview` (blocking gate)
-- **`deploy.yml` → smoke job** — runs post-deploy against `skelica.pages.dev` (informative, `continue-on-error`)
+CI layers — **all three workflows are `workflow_dispatch` only** (auto triggers were removed when
+the project was parked):
+- **`e2e.yml`** — browser smoke against `vite preview` or a given URL
+- **`deploy.yml`** — build + `wrangler pages deploy`, then a smoke job against `skelica.pages.dev`
+- **`iac.yml`** — Terraform plan. **The state is empty, so `destroy` removes nothing and `apply` will
+  try to create a duplicate.** Do not use it to decommission; see `docs/project/decommission-infra.md`.
 
 ## Sensitive Areas
 
-1. **`anatomyParser.ts`** — Regex changes affect detection accuracy; always run `npm run test:prompts`
-2. **`scorer.ts`** — Weight/dimension changes impact all scores
-3. **`patterns/`** — Must maintain consistency across all 3 languages
-4. **`i18n.ts`** — New UI text requires adding keys for all languages
-5. **`ComponentsChecklist.tsx` + `ScoreCard.tsx`** — These components intentionally have no card wrapper. The shared card is in `App.tsx`.
+1. **`anatomyParser.ts`** — Regex changes affect detection accuracy; always run `npm run test:prompts`, and run `TEST_TIER=full npm run test:prompts` too: the core tier has missed real regressions that the full tier caught.
+2. **`scorer.ts`** — Weight/dimension changes impact every score. Dimensions read component presence from the parser (`_presence`), never from English keyword lists — that is what keeps the score fair across languages.
+3. **`patterns/`** — Must stay consistent across all 3 languages. `no-useless-escape` is disabled for these files on purpose: dropping the backslash in `[:\-—]` turns it into the *range* `:` to `—`.
+4. **Semantic thresholds** (`SEMANTIC_FILL` / `SEMANTIC_OVERRIDE` in `anatomyParser.ts`) — these decide when the model may contradict the regex. Covered by `semantic-authority.test.ts`.
+5. **`anatomyParser.generateEnhancedPrompt` / component aliases** — `negative_constraint` satisfies a `constraint` expectation in the dataset; a prohibition is a constraint.
+6. **`i18n.ts`** — New UI text requires adding keys for all languages.
+7. **`ComponentsChecklist.tsx` + `ScoreCard.tsx`** — These components intentionally have no card wrapper. The shared card is in `App.tsx`.
 
 ## Demo Prompt
 
-`App.tsx` initializes `useState` with a pre-crafted prompt designed to score **B grade** and demonstrate all major components visually. The prompt uses `## Section` headers, numbered lists, and explicit keywords to match the anatomy parser patterns (e.g., `Target audience:` for audience, `Tone:` for tone, `Do not include` for negative_constraint, `## Output Format` for format).
+`App.tsx` initializes `useState` with a pre-crafted prompt that grades **A-** and demonstrates all major components visually (it graded B while the completeness dimension was stuck at its floor — see the analysis-engine doc). The prompt uses `## Section` headers, numbered lists, and explicit keywords to match the anatomy parser patterns (e.g., `Target audience:` for audience, `Tone:` for tone, `Do not include` for negative_constraint, `## Output Format` for format).
 
 When editing the default prompt, always verify the grade is A or B by running the analysis before committing.
 
 ## Deployment
 
-Static app deployed to Cloudflare Pages (auto via `.github/workflows/deploy.yml` on push to main), Netlify (`netlify.toml`), or Vercel (`vercel.json`). All configs include SPA redirect.
+Static app deployed to Cloudflare Pages — `https://skelica.pages.dev`. **The project is parked and deploys are manual only** (`workflow_dispatch`); see `docs/project/decommission-infra.md`. There is no `vercel.json` or `netlify.toml` in this repo, despite older docs claiming otherwise.
 
 ---
 
 ## Project Status
 
 - **Classificação:** PARQUE
-- **Objetivo:** Analisador de anatomia de prompts — detecta 9 componentes estruturais, calcula scores em 8 dimensões, oferece otimização via LLM. App client-side estática deployada no Cloudflare Pages.
-- **Próximas 3 ações:** N/A — projeto em modo de manutenção passiva. Sem foco ativo.
-- **Decisões recentes:** Deployed e funcionando. App totalmente client-side (sem backend). Deploy automático via GitHub Actions em push para `main`. Zero manutenção necessária no momento.
-- **Última revisão:** 2026-03-29
+- **Objetivo:** Analisador de anatomia de prompts — detecta 9 componentes estruturais (regex multilíngue + embeddings como autoridade), calcula scores em 8 dimensões, e faz handoff do prompt anotado para ChatGPT/Claude. App client-side estática deployada no Cloudflare Pages. Otimização por LLM existe em `llm/` mas não está ligada à UI.
+- **Próximas ações:** **nenhuma de desenvolvimento.** O projeto está em parque; só reabrir se uma das condições falsificáveis de `docs/project/decision-parked.md` §4 se cumprir. Infra a descomissionar em `docs/project/decommission-infra.md`.
+- **Decisões recentes:** Motor reescrito para ser invariante de idioma (união dos 3 conjuntos de padrões); scorer tornado agnóstico de idioma (viés PT↔EN de 0,248 → 0,077); Fase 2 concluída (semântico autoritativo, carregado em background); dataset corrigido e recalibrado; ESLint destravado e limpo. Ver `docs/project/analysis-engine-architecture.md`.
+- **Última revisão:** 2026-09-12

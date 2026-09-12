@@ -2,6 +2,7 @@ import { motion } from 'framer-motion';
 import { Copy, Check } from 'lucide-react';
 import { useState } from 'react';
 import { t } from '../i18n';
+import { track, EVENTS } from '../analytics/analytics';
 
 interface ComponentAnalysis {
   component: string;
@@ -14,7 +15,7 @@ interface AIButtonsProps {
   analysis?: ComponentAnalysis[] | null;
 }
 
-export function generateEnhancedPrompt(
+function generateEnhancedPrompt(
   basePrompt: string,
   analysis: ComponentAnalysis[] | null | undefined
 ): string {
@@ -92,9 +93,19 @@ export function AIButtons({ prompt, analysis }: AIButtonsProps) {
       } catch {
         // Clipboard denied — still open the provider so the user isn't stuck with a dead button.
       }
+      track(EVENTS.improveClicked, {
+        provider: provider.id,
+        mode: 'handoff-copy',
+        chars: promptToUse.length,
+      });
       window.open(provider.baseUrl, '_blank', 'noopener,noreferrer');
       return;
     }
+    track(EVENTS.improveClicked, {
+      provider: provider.id,
+      mode: 'deeplink',
+      chars: promptToUse.length,
+    });
     window.open(`${provider.baseUrl}?q=${encodeURIComponent(promptToUse)}`, '_blank', 'noopener,noreferrer');
   };
 
@@ -103,6 +114,7 @@ export function AIButtons({ prompt, analysis }: AIButtonsProps) {
     try {
       await navigator.clipboard.writeText(promptToUse);
       setCopied(true);
+      track(EVENTS.improveClicked, { provider: 'clipboard', mode: 'copy', chars: promptToUse.length });
       setTimeout(() => setCopied(false), 2000);
     } catch {
       // ignore

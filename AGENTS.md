@@ -6,7 +6,7 @@ Orientações para agentes de IA trabalhando no projeto Skelica.
 
 ## Visão Geral
 
-**Skelica** é um otimizador de prompts que analisa a anatomia de prompts de IA, calcula scores de qualidade e sugere melhorias. Permite detectar componentes estruturais (role, contexto, instruções, etc.) e otimizar prompts via LLM (OpenAI/Anthropic).
+**Skelica** é um analisador de anatomia de prompts de IA: detecta componentes estruturais (role, contexto, instruções, etc.), calcula scores de qualidade e sugere melhorias. A análise tem dois passes — regex multilíngue (instantâneo) e embeddings multilíngues (carregado em background, depois autoritativo). O handoff do prompt anotado para ChatGPT/Claude é o caminho de correção; a otimização via LLM existe em `llm/` mas não está ligada à UI.
 
 **Arquitetura:** aplicação web estática, totalmente client-side. Toda análise e scoring ocorre no navegador; não há backend.
 
@@ -21,9 +21,9 @@ Orientações para agentes de IA trabalhando no projeto Skelica.
 | **Vite 7** | Build e dev server |
 | **Tailwind CSS 4** | Estilos e tema escuro |
 | **Framer Motion** | Animações |
-| **OpenAI SDK** | Otimização via GPT-4o |
-| **Anthropic SDK** | Otimização via Claude |
-| **React Query** | Estado assíncrono/LLM |
+| **Transformers.js** | Embeddings multilíngues no navegador |
+| **OpenAI / Anthropic SDK** | Otimização via LLM (código existe, não ligado à UI) |
+| **React Query** | Estado assíncrono |
 | **Lucide React** | Ícones |
 
 ---
@@ -46,11 +46,13 @@ skelica/
 │   │   │   ├── SettingsPanel.tsx
 │   │   │   └── Logo.tsx
 │   │   ├── pages/
-│   │   │   ├── AboutPage.tsx
-│   │   │   └── PromptLinkGenerator.tsx
+│   │   │   └── AboutPage.tsx
+│   │   ├── analytics/        # Instrumentação de funil (no-op sem provider)
 │   │   ├── core/             # Motor de análise
-│   │   │   ├── anatomyParser.ts   # Detecção de componentes
-│   │   │   ├── scorer.ts          # Scoring de qualidade
+│   │   │   ├── anatomyParser.ts   # Detecção (regex + autoridade semântica)
+│   │   │   ├── scorer.ts          # Scoring de qualidade (agnóstico de idioma)
+│   │   │   ├── segmentation.ts    # Fonte única de segmentação de frases
+│   │   │   ├── semanticClassifier.ts + worker.ts  # Embeddings multilíngues
 │   │   │   ├── patterns.ts        # Carregamento de padrões
 │   │   │   └── patterns/          # Regex por idioma (en, pt, es)
 │   │   ├── llm/              # Clientes LLM
@@ -65,11 +67,9 @@ skelica/
 │   │   │   └── settings.ts   # localStorage para API keys
 │   │   ├── data/
 │   │   │   ├── components.ts # Info de componentes
-│   │   │   ├── templates.ts  # Templates profissionais
-│   │   │   └── constants.ts
-│   │   ├── utils/
-│   │   │   ├── memoize.ts
-│   │   │   └── performance.ts
+│   │   │   ├── constants.ts
+│   │   │   ├── templates.ts  # Templates profissionais (ainda sem consumidor)
+│   │   │   └── validation-prompts.json  # Dataset dourado (83 prompts)
 │   │   └── api/
 │   │       └── types.ts      # Tipos TypeScript
 │   ├── public/icons/
@@ -173,21 +173,22 @@ Idioma detectado automaticamente pelo conteúdo do prompt.
 
 ## Deploy
 
-App estático; pode ser hospedado em:
+App estático, hospedado em **Cloudflare Pages** (`https://skelica.pages.dev`).
 
-- **Vercel** — `vercel deploy`
-- **Netlify** — `netlify deploy --prod`
-- **GitHub Pages** — deploy automático via Actions (`.github/workflows/deploy.yml`)
+⚠️ **Projeto em parque:** os deploys automáticos estão desligados (só `workflow_dispatch`).
+Não há `vercel.json` nem `netlify.toml` neste repositório. Para congelar ou apagar a
+infraestrutura, ver [`docs/project/decommission-infra.md`](./docs/project/decommission-infra.md).
 
 ---
 
 ## Pontos de Atenção ao Editar
 
-1. **`anatomyParser.ts`** — Mudanças em regex afetam detecção; rodar `npm run test:prompts`.
-2. **`scorer.ts`** — Pesos e dimensões impactam scores.
-3. **`patterns/`** — Padrões por idioma; manter consistência entre en/pt/es.
-4. **`i18n.ts`** — Adicionar chaves novas quando alterar textos.
-5. **LLM** — SDKs carregados dinamicamente (code splitting) para reduzir bundle.
+1. **`anatomyParser.ts`** — Mudanças em regex afetam detecção; rodar `npm run test:prompts` **e** `TEST_TIER=full npm run test:prompts` (o tier core já deixou passar regressões que o full pegou).
+2. **`scorer.ts`** — Pesos e dimensões impactam scores. As dimensões leem presença de componente do parser (`_presence`), nunca de listas de palavras em inglês — é isso que mantém o score justo entre idiomas.
+3. **`patterns/`** — Manter consistência entre en/pt/es. `no-useless-escape` está desligado nesses arquivos de propósito: remover a barra de `[:\-—]` transforma em *faixa* de `:` até `—`.
+4. **Limiares semânticos** (`SEMANTIC_FILL`/`SEMANTIC_OVERRIDE` em `anatomyParser.ts`) — decidem quando o modelo pode contradizer o regex.
+5. **`i18n.ts`** — Adicionar chaves novas quando alterar textos.
+6. **Dataset** — Recalibrar apenas com `npx tsx scripts/calibrate-validation-prompts.ts --apply`, nunca para esconder um defeito.
 
 ---
 
@@ -195,6 +196,8 @@ App estático; pode ser hospedado em:
 
 - [README.md](./README.md) — Introdução e quick start
 - [docs/README.md](./docs/README.md) — Índice da documentação
-- [docs/project/status.md](./docs/project/status.md) — Status atual e próximos passos
+- [docs/project/decision-parked.md](./docs/project/decision-parked.md) — Por que o projeto parou e o que justificaria reabrir
+- [docs/project/decommission-infra.md](./docs/project/decommission-infra.md) — Como congelar/desligar a infraestrutura e revogar credenciais
+- [docs/project/status.md](./docs/project/status.md) — O que existe hoje (estado verificado)
 - [docs/migration/complete.md](./docs/migration/complete.md) — Migração para arquitetura client-side
 - [docs/testing/regression-prompts.md](./docs/testing/regression-prompts.md) — Regressão e prompts de validação

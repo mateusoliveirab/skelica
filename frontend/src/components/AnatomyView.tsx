@@ -49,7 +49,7 @@ function highlightText(
   }
 
   if (lastEnd < text.length) {
-    result.push({ text: text.slice(lastEnd), component: null, key: key++ });
+    result.push({ text: text.slice(lastEnd), component: null, key });
   }
 
   return result;

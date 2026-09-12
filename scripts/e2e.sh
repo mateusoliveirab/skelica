@@ -69,9 +69,10 @@ GRADE=$(agent-browser eval \
 [[ ! "$GRADE" =~ ^[A-F][+-]?$ ]] && fail "grade is not a valid letter grade: '$GRADE'"
 log "Grade: $GRADE"
 
-# The demo prompt is designed to score a B — assert determinism
-if [[ ! "$GRADE" =~ ^B ]]; then
-  log "WARN: expected grade B* for demo prompt, got $GRADE (non-fatal)"
+# The demo prompt is well-formed, so it must grade A or B. It grades A- since the
+# completeness dimension was fixed (it used to sit at its floor, capping the demo at B).
+if [[ ! "$GRADE" =~ ^[AB] ]]; then
+  log "WARN: expected grade A* or B* for demo prompt, got $GRADE (non-fatal)"
 fi
 
 agent-browser wait '[data-testid="anatomy-view"]' --timeout "$TIMEOUT"

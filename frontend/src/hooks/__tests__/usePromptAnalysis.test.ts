@@ -5,7 +5,7 @@
  */
 
 import { describe, it, expect, beforeEach, vi } from 'vitest';
-import { renderHook, waitFor, act } from '@testing-library/react';
+import { renderHook, act } from '@testing-library/react';
 import { usePromptAnalysis } from '../usePromptAnalysis';
 
 // Mock semantic classifier to avoid real model execution in tests
@@ -16,7 +16,7 @@ vi.mock('../../core/semanticClassifier', () => ({
     context: 0.7,
   }),
   setModelProgressCallback: vi.fn(),
-  preloadModel: vi.fn().mockResolvedValue(undefined),
+  warmUp: vi.fn().mockResolvedValue(undefined),
 }));
 
 vi.mock('../../api', () => ({

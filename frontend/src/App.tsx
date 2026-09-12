@@ -1,17 +1,19 @@
 import { motion, AnimatePresence } from 'framer-motion';
 import { t } from './i18n';
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { Info, Settings, Wand2 } from 'lucide-react';
 import { PromptInput } from './components/PromptInput';
 import { ScoreCard } from './components/ScoreCard';
 import { AnatomyView } from './components/AnatomyView';
 import { ComponentsChecklist } from './components/ComponentsChecklist';
+import { AIButtons } from './components/AIButtons';
 import { usePromptAnalysis } from './hooks/usePromptAnalysis';
 import { Logo } from './components/Logo';
 import { AboutPage } from './pages/AboutPage';
 import { SettingsPanel } from './components/SettingsPanel';
 import { ErrorBoundary } from './components/ErrorBoundary';
+import { track, EVENTS } from './analytics/analytics';
 
 const queryClient = new QueryClient();
 
@@ -19,34 +21,63 @@ function MainApp() {
   const [prompt, setPrompt] = useState(
     `You are an expert UX researcher and product strategist with 10 years of experience in fintech onboarding.\n\n## Context\nWe are redesigning the onboarding flow for a fintech app. The current drop-off rate is 68% at step 3 of 5. Users are millennials and Gen Z — tech-savvy but cautious about sharing financial data.\n\n## Task\nAnalyze the onboarding screen designs and identify the top 3 friction points causing user drop-off. For each one, propose a specific and testable solution grounded in UX principles.\n\nFor example: if a screen has a long form, suggest progressive disclosure and explain how it reduces cognitive load by breaking information into smaller steps.\n\n## Constraints\n- Each solution must be implementable in under 2 weeks by a team of 2 developers.\n- Do not include third-party integrations or any changes that require backend work.\n\n## Output Format\nStructure each friction point as follows:\n1. Issue + severity (1–5)\n2. Root cause\n3. Proposed fix\n4. Success metric\n\n## Audience\nTarget audience: product designers and frontend engineers reviewing this report together.\n\nTone: professional but accessible — avoid jargon without explanation.`
   );
-  const [showResults, setShowResults] = useState(false);
-  const { analysis, score, loading, error, modelReady, downloadProgress, analyze } = usePromptAnalysis();
+  const {
+    analysis,
+    score,
+    loading,
+    refining,
+    semanticStatus,
+    error,
+    downloadProgress,
+    analyze,
+    enableSemantic,
+  } = usePromptAnalysis();
 
   const handleAnalyze = useCallback(() => {
+    track(EVENTS.analyzeClicked, {
+      chars: prompt.trim().length,
+      semantic: semanticStatus === 'ready',
+    });
     analyze(prompt);
-    setShowResults(true);
-  }, [analyze, prompt]);
+  }, [analyze, prompt, semanticStatus]);
 
+  // Funnel step: the visitor actually saw a result. This is the activation event —
+  // everything upstream of it is acquisition, everything downstream is monetisation.
+  const lastTrackedResult = useRef('');
   useEffect(() => {
-    if (!prompt.trim()) {
-      setShowResults(false);
-    }
-  }, [prompt]);
+    if (!analysis || !score) return;
 
-  // Hide results while loading a new one to ensure fresh state
+    const present = analysis.components.filter((c) => c.presence.present).length;
+    const phase = semanticStatus === 'ready' ? 'refined' : 'pattern';
+    const signature = `${score.grade}|${score.overall_score}|${present}|${phase}`;
+    if (signature === lastTrackedResult.current) return;
+    lastTrackedResult.current = signature;
+
+    track(EVENTS.analysisShown, {
+      grade: score.grade,
+      score: score.overall_score,
+      components_present: present,
+      chars: analysis.prompt.length,
+      phase,
+    });
+  }, [analysis, score, semanticStatus]);
+
+  // Record how often the background semantic pass succeeds or fails.
   useEffect(() => {
-    if (loading) {
-      setShowResults(false);
-    } else if (analysis) {
-      setShowResults(true);
+    if (semanticStatus === 'ready' || semanticStatus === 'failed') {
+      track(EVENTS.semanticSettled, { state: semanticStatus });
     }
-  }, [loading, analysis]);
+  }, [semanticStatus]);
+
+  // Derived, not stored: results exist exactly when there is an analysis for a non-empty
+  // prompt. Keeping this in state meant two effects that called setState on every change.
+  const showResults = Boolean(analysis) && prompt.trim().length > 0;
 
   return (
     <div className="min-h-screen bg-[var(--bg-base)] overflow-x-hidden flex flex-col">
       {/* Model Loading Progress */}
       <AnimatePresence>
-        {!modelReady && downloadProgress > 0 && downloadProgress < 100 && (
+        {semanticStatus === 'loading' && downloadProgress > 0 && downloadProgress < 100 && (
           <motion.div
             initial={{ opacity: 0, y: -20 }}
             animate={{ opacity: 1, y: 0 }}
@@ -111,6 +142,10 @@ function MainApp() {
             onChange={setPrompt}
             onAnalyze={handleAnalyze}
             loading={loading}
+            semanticStatus={semanticStatus}
+            downloadProgress={downloadProgress}
+            onEnableSemantic={enableSemantic}
+            refining={refining}
           />
         </motion.div>
 
@@ -149,6 +184,30 @@ function MainApp() {
                 {score && <ScoreCard score={score} compact />}
                 <div className="border-t border-[var(--border-subtle)]" />
                 <ComponentsChecklist components={analysis.components} />
+              </motion.div>
+
+              {/* Step 3: Action — turn the diagnosis into a fix. This is the value
+                  moment: a score alone is not something anyone pays for. */}
+              <motion.div
+                variants={{
+                  hidden: { opacity: 0, y: 24 },
+                  visible: { opacity: 1, y: 0, transition: { duration: 0.5, ease: [0.22, 1, 0.36, 1] } }
+                }}
+                data-testid="improve-actions"
+                className="mt-5 flex flex-wrap items-center justify-between gap-4
+                         bg-[var(--bg-surface)] border border-[var(--border-subtle)] rounded-xl
+                         px-5 py-4 backdrop-blur-sm"
+              >
+                <div className="flex items-center gap-2">
+                  <Wand2 className="w-4 h-4 text-[var(--skelica-accent)]" />
+                  <span className="text-sm text-[var(--fg-secondary)]">{t('improve_with_ai')}</span>
+                  {semanticStatus === 'ready' && (
+                    <span className="text-[10px] uppercase tracking-wider text-[var(--skelica-accent)] border border-[var(--border-subtle)] rounded px-2 py-0.5">
+                      {t('semantic_active')}
+                    </span>
+                  )}
+                </div>
+                <AIButtons prompt={analysis.prompt} analysis={analysis.components} />
               </motion.div>
             </motion.div>
           )}

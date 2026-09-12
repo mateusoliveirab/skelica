@@ -1,11 +1,16 @@
 name: E2E
 
+# ---------------------------------------------------------------------------
+# PROJETO EM PARQUE — execução manual apenas.
+#
+# O gatilho automático (push/PR) foi removido ao estacionar o projeto: um app parado
+# não deve reimplantar a partir de commits não relacionados.
+#
+# ATENÇÃO: se o projeto do Cloudflare Pages ainda tiver integração com o GitHub,
+# a própria Cloudflare compila a partir de `main` — este arquivo NÃO é o único
+# caminho para um deploy. Ver docs/project/decommission-infra.md.
+# ---------------------------------------------------------------------------
 on:
-  pull_request:
-    paths:
-      - 'frontend/**'
-      - 'scripts/e2e.sh'
-      - '.github/workflows/e2e.yml'
   workflow_dispatch:
     inputs:
       url:

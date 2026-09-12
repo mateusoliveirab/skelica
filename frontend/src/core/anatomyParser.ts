@@ -11,6 +11,7 @@ import type {
   HighlightType,
 } from '../types/anatomy';
 import { PatternLoader, getPatternLoader, type PatternMap } from './patterns';
+import { splitSentences, MIN_SENTENCE_LENGTH } from './segmentation';
 
 /**
  * Internal parsed component structure
@@ -21,6 +22,20 @@ interface ParsedComponent {
   start: number;
   end: number;
   confidence: number;
+}
+
+/**
+ * A pattern match before overlap resolution. Matches from every language are collected into
+ * one list and resolved together, so this is the shared currency between `collectMatches`
+ * and `resolveOverlaps`.
+ */
+interface RawComponentMatch {
+  componentType: PromptComponentType;
+  content: string;
+  start: number;
+  end: number;
+  priority: number;
+  length: number;
 }
 
 /**
@@ -37,6 +52,16 @@ const COMPONENT_PRIORITY: Record<string, number> = {
   audience: 8,
   tone: 9,
 };
+
+/**
+ * Semantic-classifier confidence bands (cosine similarity against exemplar centroids).
+ *
+ * They overlap by construction — neutral filler can score ~0.89 against a label while true
+ * positives start around 0.88 — so the two bands encode how costly each mistake is:
+ * filling a gap wrongly is recoverable, contradicting a regex match is not.
+ */
+const SEMANTIC_FILL = 0.90;
+const SEMANTIC_OVERRIDE = 0.93;
 
 /**
  * Containment rules - which components can contain others
@@ -119,14 +144,11 @@ export class AnatomyParser {
         return this.createEmptyResult(promptText || '');
       }
 
-      // Detect language
+      // Detect language — a hint for which pattern set is authoritative, never a filter.
       const detectedLang = this.detectLanguage(promptText);
 
-      // Get patterns for detected language
-      const patterns = this.patternLoader.getPatternsForLanguage(detectedLang);
-
-      // Extract components via Regex
-      const parsedComponents = this.extractComponents(promptText, patterns);
+      // Extract components via Regex, filling gaps from the other languages.
+      const parsedComponents = this.extractWithLanguageFallback(promptText, detectedLang);
 
       // Enhance with Semantic AI if available
       if (sentenceSemanticMap) {
@@ -175,82 +197,115 @@ export class AnatomyParser {
   }
 
   /**
-   * Detect language of the prompt text
+   * Detect the language of the prompt so the right pattern set is used.
+   *
+   * A wrong guess is expensive: the parser loads one pattern set, so misreading a Portuguese
+   * prompt as English (or vice versa) yields **zero components** rather than a partial result.
+   *
+   * Two traps this implementation avoids:
+   *  1. `\b` is ASCII-only in JavaScript (`\w` is [A-Za-z0-9_]), so `/\bvocê\b/` can never
+   *     match — every accented marker would be silently dead. Word lookups run against a
+   *     diacritic-stripped copy; accents are counted separately on the original text.
+   *  2. English-ambiguous tokens ("do", "no", "com", "email") must not count as Portuguese
+   *     evidence, or ordinary English prompts classify as Portuguese. Tokens shared between
+   *     Portuguese and Spanish are counted separately as "Iberian" and never decide pt vs es.
    */
-  private detectLanguage(text: string): string {
+  detectLanguage(text: string): string {
     if (!text || text.trim().length < 5) {
       return 'en';
     }
 
     const lowerText = text.toLowerCase();
+    // Diacritics removed so word-boundary matching works at all (see trap 1 above).
+    const ascii = lowerText.normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+    const count = (regex: RegExp, source: string = ascii) => source.match(regex)?.length ?? 0;
 
-    // Portuguese indicators (unique or very common in PT)
-    const ptIndicators = [
-      /\b(você|vocês|seu|sua|seus|suas|também|muito|fazer|escrever|escreva|faça|tente|use|exemplo|tom|estilo|público)\b/g,
-      /\b(é|são|está|estão|foi|foram|será|serão|sênior|júnior|especialista|profissional|sistema|erro|problema)\b/g,
-      /\b(para|com|por|sobre|entre|até|desde|desenvolvedor|função|números|artigo|código|email|e-mail|dre|lgpd)\b/g,
-      /\b(não|sim|mais|menos|muito|pouco|bem|mal|pra|pro|pelo|pela|num|numa|preciso|tenho|temos|amanhã|férias|sexta-feira|tá|com|pode|que|ser|da|do|na|no)\b/g,
-      /\b(cria|crie|gere|gera|redija|redija|elabore|elabora|sugira|sugere|analise|analisa|explica|explique)\b/g,
-      /[ãõêéíóúç]/g, // Common Portuguese characters
-    ];
+    // Portuguese-only, accent-stripped, not valid English or Spanish words.
+    const ptOnly =
+      /\b(voce|voces|nao|tambem|funcao|funcoes|sao|estao|sera|serao|ate|escreve|escreva|escrever|escreveu|faca|faz|fazer|fez|crie|cria|criar|gere|gera|gerar|redija|sugira|sugere|analise|analisa|preciso|precisa|temos|tenho|muito|pouco|erro|processo|profissional|vaga|avaliar|funcionarios|funcionario|depois|proposta|pra|pro|pelo|pela|num|numa|amanha|dados|uma|desenvolvedor|tem|vai|foi|foram|acao|acoes|entao|padrao|opcao|opcoes|informacao|atencao|coracao|orgao)\b/g;
 
-    // Spanish indicators (unique or very common in ES)
-    const esIndicators = [
-      /\b(usted|ustedes|tú|su|sus|tambien|muy|hacer|escribir|escriba|escribe|haz|tente|use|ejemplo|tono|estilo|público)\b/g,
-      /\b(es|son|está|están|fue|fueron|será|serán|senior|junior|experto|especialista|profesional|sistema|error|problema)\b/g,
-      /\b(para|con|por|sobre|entre|hasta|desde|desarrollador|función|números|artículo|código|email|e-mail)\b/g,
-      /\b(no|sí|más|menos|bien|mal|del|al|en|con|puede|que|ser)\b/g,
-      /\b(crea|cree|genera|genere|escriba|escribe|sugiera|sugiere|analice|analiza)\b/g,
-      /[ñáéíóú¿¡]/g, // Common Spanish characters
-    ];
+    // Spanish-only, accent-stripped, not valid English or Portuguese words.
+    const esOnly =
+      /\b(usted|ustedes|tambien|funcion|funciones|articulo|experto|escriba|escribe|escribir|haz|hacer|genere|redacte|sugiera|analice|necesito|necesitamos|tenemos|manana|vacaciones|desarrollador|mucho|poco|hasta|datos|eres|tiene|puede|puedes|debe|debes|espanol|nino|senor|senal)\b/g;
 
-    // English indicators (unique or very common in EN)
-    const enIndicators = [
-      /\b(you|your|yours|also|very|make|write|do|does|try|use|example|tone|style|audience)\b/g,
-      /\b(is|are|was|were|will|would|should|could|senior|junior|expert|professional)\b/g,
-      /\b(the|a|an|this|that|these|those|developer|function|numbers|article|code|email|e-mail)\b/g,
-      /\b(not|yes|more|less|very|well|bad|with|from|about|office)\b/g,
-      /\b(create|generate|write|suggest|analyze|summarize|list)\b/g,
-    ];
+    // Shared by Portuguese and Spanish but not English words. Cannot discriminate pt vs es,
+    // but does prove the text is not English.
+    const iberian =
+      /\b(sobre|entre|desde|numeros|numero|codigo|codigos|publico|empresa|sistema|problema|problemas|cliente|clientes|especialista|explica|explique|etapas|elabore|profesional|metodos|metodo|nativos|nativo|ordena|importante)\b/g;
 
-    const ptScore = ptIndicators.reduce((sum, regex) => sum + (lowerText.match(regex)?.length || 0), 0);
-    const esScore = esIndicators.reduce((sum, regex) => sum + (lowerText.match(regex)?.length || 0), 0);
-    const enScore = enIndicators.reduce((sum, regex) => sum + (lowerText.match(regex)?.length || 0), 0);
+    const enMarkers =
+      /\b(the|you|your|yours|this|that|these|those|with|from|about|should|could|would|will|are|is|was|were|have|has|write|create|make|explain|summarize|list|analyze|do|does|not|use|using|example|tone|audience|output|format|step|steps|code|function|and|for|but|what|when|how|which)\b/g;
 
-    // Bias towards Portuguese for prompts with Portuguese-only indicators
-    const ptUniqueBonus = (lowerText.match(/\b(é|não|você|vocês|pelo|pela|pra|pro|uma|da|do|férias|amanhã|sexta-feira|tá|com|pode|na|no)\b/g)?.length || 0) * 5;
-    const ptCharBonus = (lowerText.match(/[ãõç]/g)?.length || 0) * 3;
-    const finalPtScore = ptScore + ptUniqueBonus + ptCharBonus;
+    // ã/õ/ç are Portuguese-exclusive among {pt, es, en}; ñ/¿/¡ are Spanish-exclusive.
+    const ptChars = count(/[ãõç]/g, lowerText);
+    const esChars = count(/[ñ¿¡]/g, lowerText);
+    const sharedAccents = count(/[áéíóúâêôà]/g, lowerText);
 
-    // Bias towards Spanish for Spanish-only characters or words
-    const esUniqueBonus = (lowerText.match(/\b(es|no|usted|ustedes|una|del|al|mañana|puede)\b/g)?.length || 0) * 5;
-    const esCharBonus = (lowerText.match(/[ñ¿¡]/g)?.length || 0) * 3;
-    const finalEsScore = esScore + esUniqueBonus + esCharBonus;
+    const iberianWords = count(iberian);
+    const ptWords = count(ptOnly);
+    const esWords = count(esOnly);
+    // Accent bonuses require at least one language-specific word. Otherwise a single "ñ" or
+    // "é" mentioned inside an English prompt ("...and ñ characters") would flip the language
+    // and cost the entire analysis.
+    const ptScore = ptWords * 2 + (ptWords > 0 ? ptChars * 2 : 0);
+    const esScore = esWords * 2 + (esWords > 0 ? esChars * 2 : 0);
+    // Shared accents only count as Iberian evidence once a shared word is present, so a lone
+    // accented loanword ("résumé") in an English prompt cannot flip the language.
+    const iberianScore = iberianWords * 2 + (iberianWords > 0 ? sharedAccents : 0);
+    const enScore = count(enMarkers);
 
-    if (finalPtScore > finalEsScore && finalPtScore > enScore) {
-      return 'pt';
-    }
-    if (finalEsScore > finalPtScore && finalEsScore > enScore) {
-      return 'es';
-    }
-    return 'en';
+    if (ptScore > esScore) return 'pt';
+    if (esScore > ptScore) return 'es';
+    if (iberianScore === 0) return 'en';
+    // Only shared pt/es evidence so far — English must be clearly stronger to win.
+    return enScore > iberianScore ? 'en' : 'pt';
   }
 
   /**
-   * Extract components from text using regex patterns
+   * Detect components using the patterns of *all* supported languages, with the detected
+   * language only breaking ties.
+   *
+   * WHY: the three pattern sets are hand-maintained and have drifted apart (en 151 regexes,
+   * pt 131, es 92). Loading only one of them meant a Portuguese prompt was scored with a
+   * visibly poorer detector than an English one, and a language misdetection could collapse
+   * the result to zero components. Both are structural, not incidental.
+   *
+   * An earlier attempt only filled component *types* the leading language had missed. That
+   * left the outcome language-dependent in 51 of 83 validation prompts and still produced
+   * zero components in a few cases, because a single match made of one language's span blocks
+   * every other type from the same region. Collecting every language's matches and resolving
+   * overlaps once makes the result nearly independent of which language was guessed: the
+   * guess now only decides which of two competing matches wins.
    */
-  private extractComponents(text: string, patterns: PatternMap): ParsedComponent[] {
-    // First: detect header sections (high confidence)
-    const headerComponents = this.extractHeaderSections(text);
+  private extractWithLanguageFallback(text: string, primaryLang: string): ParsedComponent[] {
+    const languages = this.patternLoader.getSupportedLanguages();
+    // Leading language first: for equal priority and equal start, the sort below is stable,
+    // so its match is considered first and wins the overlap.
+    const ordered = [primaryLang, ...languages.filter((lang) => lang !== primaryLang)];
 
-    const allMatches: Array<{
-      componentType: PromptComponentType;
-      content: string;
-      start: number;
-      end: number;
-      priority: number;
-      length: number;
-    }> = [];
+    const allMatches: RawComponentMatch[] = [];
+    let headersCollected = false;
+
+    for (const lang of ordered) {
+      const patterns = this.patternLoader.getPatternsForLanguage(lang);
+      // Header sections are language-agnostic — collect them once.
+      allMatches.push(...this.collectMatches(text, patterns, !headersCollected));
+      headersCollected = true;
+    }
+
+    return this.resolveOverlaps(allMatches);
+  }
+
+  /**
+   * Collect raw, unresolved pattern matches for the given patterns.
+   * @param includeHeaders - header sections are language-agnostic and relatively expensive,
+   *   so a multi-language pass collects them only once.
+   */
+  private collectMatches(text: string, patterns: PatternMap, includeHeaders: boolean): RawComponentMatch[] {
+    // First: detect header sections (high confidence)
+    const headerComponents = includeHeaders ? this.extractHeaderSections(text) : [];
+
+    const allMatches: RawComponentMatch[] = [];
 
     // Add header matches with high priority
     for (const hc of headerComponents) {
@@ -264,63 +319,34 @@ export class AnatomyParser {
       });
     }
 
-    // Second: find traditional pattern matches
+    // Second: find traditional pattern matches.
+    //
+    // Collected in two passes because expansion must not cross text another pattern already
+    // claimed. Expanding "Resposta objetiva" to the end of its sentence used to swallow the
+    // following "em tópicos" format match, which was then rejected as an overlap and the
+    // component disappeared. A span may grow into unclaimed text, never into a neighbour.
+    const rawSpans: Array<{
+      componentType: string;
+      matchStart: number;
+      matchEnd: number;
+    }> = [];
+
     for (const [compType, patternList] of Object.entries(patterns)) {
       for (const pattern of patternList) {
         try {
           // Use pre-compiled pattern directly (already has global flag)
           const matches = text.matchAll(pattern);
-          
+
           for (const match of matches) {
             const raw = match[0];
             if (!raw || raw.trim().length < 3) {
               continue;
             }
-
-            let start = match.index ?? 0;
-            let end = start + raw.length;
-
-            // Expand to sentence end (but be careful with role)
-            if (compType !== 'role') {
-              end = this.expandToSentenceEnd(text, end);
-            } else {
-              // For role, only expand to next comma or sentence end
-              const nextComma = text.indexOf(',', end);
-              const nextSentence = this.expandToSentenceEnd(text, end);
-              if (nextComma !== -1 && nextComma < nextSentence && nextComma < end + 40) {
-                end = nextComma;
-              } else {
-                end = nextSentence;
-              }
-            }
-
-            // For constraints, expand to sentence start
-            if (compType === 'constraint' || compType === 'negative_constraint') {
-              start = this.expandToSentenceStart(text, start);
-            }
-
-            // For role, expand to include additional phrases
-            if (compType === 'role') {
-              end = this.expandRoleContent(text, start, end);
-            }
-
-            const content = text.substring(start, end).trim();
-            if (!content || content.length < 3) {
-              continue;
-            }
-
-            // Adjust start/end to match trimmed content
-            const trimmedStart = start + (text.substring(start, end).length - text.substring(start, end).trimStart().length);
-            const trimmedEnd = trimmedStart + content.length;
-
-            const priority = COMPONENT_PRIORITY[compType] || 99;
-            allMatches.push({
-              componentType: compType as PromptComponentType,
-              content,
-              start: trimmedStart,
-              end: trimmedEnd,
-              priority,
-              length: trimmedEnd - trimmedStart,
+            const matchStart = match.index ?? 0;
+            rawSpans.push({
+              componentType: compType,
+              matchStart,
+              matchEnd: matchStart + raw.length,
             });
           }
         } catch (error) {
@@ -330,13 +356,72 @@ export class AnatomyParser {
       }
     }
 
-    // Sort by priority, then start position
-    allMatches.sort((a, b) => {
-      if (a.priority !== b.priority) return a.priority - b.priority;
-      return a.start - b.start;
-    });
+    for (const { componentType: compType, matchStart, matchEnd } of rawSpans) {
+      // Nearest neighbour boundaries: expansion may reach them but not pass them.
+      let lowerBound = 0;
+      let upperBound = text.length;
+      for (const other of rawSpans) {
+        if (other === undefined) continue;
+        if (other.matchEnd <= matchStart && other.matchEnd > lowerBound) {
+          lowerBound = other.matchEnd;
+        }
+        if (other.matchStart >= matchEnd && other.matchStart < upperBound) {
+          upperBound = other.matchStart;
+        }
+      }
 
-    return this.resolveOverlaps(allMatches);
+      let start = matchStart;
+      let end = matchEnd;
+
+      // Expand to sentence end (but be careful with role)
+      if (compType !== 'role') {
+        end = this.expandToSentenceEnd(text, end);
+      } else {
+        // For role, only expand to next comma or sentence end
+        const nextComma = text.indexOf(',', end);
+        const nextSentence = this.expandToSentenceEnd(text, end);
+        if (nextComma !== -1 && nextComma < nextSentence && nextComma < end + 40) {
+          end = nextComma;
+        } else {
+          end = nextSentence;
+        }
+      }
+
+      // For constraints, expand to sentence start
+      if (compType === 'constraint' || compType === 'negative_constraint') {
+        start = this.expandToSentenceStart(text, start);
+      }
+
+      // For role, expand to include additional phrases
+      if (compType === 'role') {
+        end = this.expandRoleContent(text, start, end);
+      }
+
+      // Never grow into a neighbour's claimed span.
+      start = Math.max(start, lowerBound);
+      end = Math.min(end, upperBound);
+
+      const content = text.substring(start, end).trim();
+      if (!content || content.length < 3) {
+        continue;
+      }
+
+      // Adjust start/end to match trimmed content
+      const trimmedStart = start + (text.substring(start, end).length - text.substring(start, end).trimStart().length);
+      const trimmedEnd = trimmedStart + content.length;
+
+      const priority = COMPONENT_PRIORITY[compType] || 99;
+      allMatches.push({
+        componentType: compType as PromptComponentType,
+        content,
+        start: trimmedStart,
+        end: trimmedEnd,
+        priority,
+        length: trimmedEnd - trimmedStart,
+      });
+    }
+
+    return allMatches;
   }
 
   /**
@@ -435,13 +520,23 @@ export class AnatomyParser {
     return initialEnd;
   }
 
+
   /**
-   * Expand to the end of the current sentence
+   * Expand to the end of the current sentence, never crossing a line break.
+   *
+   * NOTE ON `Intl.Segmenter`: this was rewritten to use real sentence segmentation and then
+   * reverted, on measurement. Segmenter answers a *global* question ("where does this sentence
+   * end?"), but a span needs a *local* answer ("how far should this match reach?"). For
+   * informal prompts that the segmenter reads as one long sentence, the span ballooned across
+   * the whole prompt, overlapped the role span, and the component was dropped — two prompts
+   * regressed. The bounding lookahead below is what keeps a span from swallowing the document,
+   * so this stays intentionally local. `splitSentences()` in `core/segmentation.ts` is the
+   * right place for `Intl.Segmenter`, and is what the semantic pass uses.
    */
   private expandToSentenceEnd(text: string, end: number): number {
-    const maxLookahead = 200;
-    const chunk = text.substring(end, end + maxLookahead);
-    
+    const lookahead = 200;
+    const chunk = text.substring(end, end + lookahead);
+
     for (let i = 0; i < chunk.length; i++) {
       if ('.!?'.includes(chunk[i])) {
         return end + i + 1;
@@ -450,12 +545,13 @@ export class AnatomyParser {
         return end + i;
       }
     }
-    
+
     return end;
   }
 
   /**
-   * Expand to the start of the current sentence
+   * Expand to the start of the current sentence, bounded by the previous line break.
+   * See the note on `expandToSentenceEnd` for why this is a local scan.
    */
   private expandToSentenceStart(text: string, start: number): number {
     for (let i = start - 1; i >= 0; i--) {
@@ -467,7 +563,7 @@ export class AnatomyParser {
         return newStart;
       }
     }
-    
+
     let newStart = 0;
     while (newStart < start && /\s/.test(text[newStart])) {
       newStart++;
@@ -500,16 +596,7 @@ export class AnatomyParser {
   /**
    * Resolve overlapping components based on priority and containment rules
    */
-  private resolveOverlaps(
-    allMatches: Array<{
-      componentType: PromptComponentType;
-      content: string;
-      start: number;
-      end: number;
-      priority: number;
-      length: number;
-    }>
-  ): ParsedComponent[] {
+  private resolveOverlaps(allMatches: RawComponentMatch[]): ParsedComponent[] {
     // Sort by: priority (lower = better), start position, then prefer smaller matches (more specific)
     allMatches.sort((a, b) => {
       if (a.priority !== b.priority) return a.priority - b.priority;
@@ -664,68 +751,111 @@ export class AnatomyParser {
   }
 
   /**
-   * Use granular sentence map to fill gaps and resolve ambiguities
+   * Refine the regex-derived components with the semantic classifier.
+   *
+   * FASE 2 — the semantic pass is the **authority**, not an add-on. The regex still runs first
+   * because it is instant and free; this runs whenever the model is available and can correct
+   * it. Rules, per sentence:
+   *
+   *  - **Agreement** (the regex already claimed this sentence with the same type): keep the
+   *    regex span — it is usually tighter — and raise its confidence to the model's score.
+   *  - **Override** (`score >= SEMANTIC_OVERRIDE` and the regex claim is contained in this
+   *    sentence): the model is confident and the regex claim is local, so the model's type
+   *    replaces it. This is what makes the semantic detector primary.
+   *  - **Fill** (`SEMANTIC_FILL <= score`): the regex found nothing here, so add it.
+   *  - Otherwise: ignore. Neutral filler text scores up to ~0.89 against these labels while
+   *    true positives sit at 0.88-0.96, so the bands overlap and there is no clean cut. Adding
+   *    is cheap to get wrong (the regex result stands); *contradicting* is not, which is why
+   *    the override bar is deliberately higher than the fill bar.
+   *
+   * These thresholds are empirical and belong to the score-vs-quality experiment: until the
+   * score is shown to predict real quality, tightening them is guesswork.
    */
   private enhanceWithGranularAI(
     text: string,
     existing: ParsedComponent[],
     sentenceMap: Record<string, Record<string, number>>
   ): void {
-    const sentences = text.split(/([.!?\n]+)/);
-    let currentPos = 0;
+    // Segmentation must match the producer of `sentenceMap` (see core/segmentation.ts and
+    // usePromptAnalysis). The previous `text.split(/([.!?\n]+)/)` kept the separators as their
+    // own array entries, so half the "sentences" were punctuation and every real sentence had
+    // to fall back to the whole-prompt scores.
+    const sentences = splitSentences(text);
 
-    for (let i = 0; i < sentences.length; i++) {
-      const rawSentence = sentences[i];
-      if (!rawSentence) continue;
-
-      const start = currentPos;
-      const end = currentPos + rawSentence.length;
-      currentPos = end;
-
+    for (const { text: rawSentence, start } of sentences) {
       const sentence = rawSentence.trim();
-      if (sentence.length < 5) continue;
+      if (sentence.length < MIN_SENTENCE_LENGTH) continue;
 
-      // Check coverage
-      const isCovered = existing.some(comp => 
-        (start >= comp.start && start < comp.end) || 
-        (end > comp.start && end <= comp.end)
+      const leading = rawSentence.length - rawSentence.trimStart().length;
+      const spanStart = start + leading;
+      const spanEnd = spanStart + sentence.length;
+
+      const best = this._bestComponentFor(sentenceMap, sentence);
+      if (!best) continue;
+
+      const overlapping = existing.filter(
+        (c) => spanStart < c.end && c.start < spanEnd
       );
 
-      if (!isCovered) {
-        // Find best match in semantic scores for THIS specific sentence.
-        // `scores` is already keyed by component id (see core/semanticClassifier.ts /
-        // core/worker.ts) — no label-string translation needed here.
-        const scores = sentenceMap[sentence] || sentenceMap['__FULL_PROMPT__'] || {};
-
-        let bestType: PromptComponentType | null = null;
-        // Calibrated empirically for ADR-0001's cosine-similarity scores, not the old NLI
-        // entailment-probability scale. Neutral filler text ("Thanks in advance for your
-        // help...") still scores up to ~0.89 top-1 against these labels, overlapping true
-        // positives (~0.88-0.96) — there is no clean separating threshold. 0.90 is chosen to
-        // bias toward precision: this layer only reinforces regex-uncovered spans, so a missed
-        // detection just falls back to regex-only (safe), while a false positive actively
-        // mislabels neutral text as a component.
-        let bestScore = 0.90;
-
-        for (const [compType, score] of Object.entries(scores)) {
-          if (score > bestScore) {
-            bestScore = score;
-            bestType = compType as PromptComponentType;
-          }
-        }
-
-        if (bestType) {
+      if (overlapping.length === 0) {
+        if (best.score >= SEMANTIC_FILL) {
           existing.push({
-            componentType: bestType,
+            componentType: best.type,
             content: sentence,
-            start: start + (rawSentence.length - rawSentence.trimStart().length),
-            end: start + (rawSentence.length - rawSentence.trimStart().length) + sentence.length,
-            confidence: bestScore,
+            start: spanStart,
+            end: spanEnd,
+            confidence: best.score,
           });
         }
+        continue;
+      }
+
+      const agreement = overlapping.find((c) => c.componentType === best.type);
+      if (agreement) {
+        agreement.confidence = Math.max(agreement.confidence, best.score);
+        continue;
+      }
+
+      // A regex span that reaches beyond this sentence is making a broader claim; one
+      // sentence's classification is not enough evidence to overturn it.
+      const contained = overlapping.filter((c) => c.start >= spanStart && c.end <= spanEnd);
+      if (contained.length === 0 || best.score < SEMANTIC_OVERRIDE) continue;
+
+      for (const claimed of contained) {
+        existing.splice(existing.indexOf(claimed), 1);
+      }
+      existing.push({
+        componentType: best.type,
+        content: sentence,
+        start: spanStart,
+        end: spanEnd,
+        confidence: best.score,
+      });
+    }
+
+    existing.sort((a, b) => a.start - b.start);
+  }
+
+  /** Highest-scoring component for a sentence, or null when nothing clears the floor. */
+  private _bestComponentFor(
+    sentenceMap: Record<string, Record<string, number>>,
+    sentence: string
+  ): { type: PromptComponentType; score: number } | null {
+    // `sentenceMap` is keyed by component id already (see core/worker.ts), falling back to the
+    // whole-prompt scores for sentences the producer skipped.
+    const scores = sentenceMap[sentence] || sentenceMap['__FULL_PROMPT__'] || {};
+
+    let type: PromptComponentType | null = null;
+    let score = 0;
+
+    for (const [componentType, value] of Object.entries(scores)) {
+      if (value > score) {
+        score = value;
+        type = componentType as PromptComponentType;
       }
     }
-    existing.sort((a, b) => a.start - b.start);
+
+    return type && score >= SEMANTIC_FILL ? { type, score } : null;
   }
 }
 

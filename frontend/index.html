@@ -4,10 +4,78 @@
     <meta charset="UTF-8" />
     <link rel="icon" type="image/png" href="/favicon.png" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>skelica — prompt anatomy</title>
+
+    <title>Skelica — prompt anatomy analyzer &amp; quality score</title>
+    <meta
+      name="description"
+      content="Paste any AI prompt and see its anatomy: 9 structural components detected, a quality score across 8 dimensions, and exactly what is missing. Free, instant, and runs entirely in your browser — no signup, no API key."
+    />
+    <link rel="canonical" href="https://skelica.pages.dev/" />
+    <meta name="robots" content="index, follow, max-image-preview:large" />
+    <meta name="theme-color" content="#0c0c12" />
+    <meta name="author" content="Skelica" />
+
+    <!-- Open Graph -->
+    <meta property="og:type" content="website" />
+    <meta property="og:site_name" content="Skelica" />
+    <meta property="og:url" content="https://skelica.pages.dev/" />
+    <meta property="og:title" content="Skelica — prompt anatomy analyzer &amp; quality score" />
+    <meta
+      property="og:description"
+      content="See the anatomy of any AI prompt. Detect 9 structural components, score it across 8 dimensions, and find exactly what is missing — instantly, in your browser."
+    />
+    <meta property="og:image" content="https://skelica.pages.dev/og-image.png" />
+    <meta property="og:image:width" content="1200" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:image:alt" content="Skelica — see the anatomy of any prompt" />
+    <meta property="og:locale" content="en_US" />
+
+    <!-- Twitter -->
+    <meta name="twitter:card" content="summary_large_image" />
+    <meta name="twitter:title" content="Skelica — prompt anatomy analyzer &amp; quality score" />
+    <meta
+      name="twitter:description"
+      content="Detect 9 structural components in any AI prompt, score it across 8 dimensions, and see exactly what is missing. Free and instant."
+    />
+    <meta name="twitter:image" content="https://skelica.pages.dev/og-image.png" />
+
+    <script type="application/ld+json">
+      {
+        "@context": "https://schema.org",
+        "@type": "SoftwareApplication",
+        "name": "Skelica",
+        "applicationCategory": "DeveloperApplication",
+        "operatingSystem": "Web browser",
+        "url": "https://skelica.pages.dev/",
+        "description": "Prompt anatomy analyzer and quality scorer. Detects 9 structural components in AI prompts and scores them across 8 quality dimensions, entirely in the browser.",
+        "offers": {
+          "@type": "Offer",
+          "price": "0",
+          "priceCurrency": "USD"
+        },
+        "featureList": [
+          "Prompt component detection (role, context, instruction, constraint, example, output format, audience, tone)",
+          "Multi-dimensional quality scoring with letter grades",
+          "Colour-coded prompt highlighting",
+          "Multilingual detection: English, Portuguese, Spanish",
+          "Runs fully client-side — prompts never leave the browser"
+        ]
+      }
+    </script>
   </head>
   <body>
     <div id="root"></div>
+    <noscript>
+      <h1>Skelica — prompt anatomy analyzer</h1>
+      <p>
+        Skelica dissects AI prompts to reveal what is strong and what needs sharpening. Paste any
+        prompt and it detects 9 structural components (role, context, instruction, constraint,
+        negative constraint, example, output format, audience, tone), calculates a quality score
+        across 8 dimensions, highlights each component in place, and lists what is missing.
+        Analysis runs entirely in your browser in English, Portuguese and Spanish.
+      </p>
+      <p><a href="https://skelica.pages.dev/">Open Skelica</a> (requires JavaScript).</p>
+    </noscript>
     <script type="module" src="/src/main.tsx"></script>
   </body>
 </html>

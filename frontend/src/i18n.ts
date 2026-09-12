@@ -27,7 +27,7 @@ const EN: Translations = {
 
   // Benefits
   benefit_precision_title: "Surgical Precision",
-  benefit_precision_desc: "Identify exactly what’s missing to get 3x better AI responses.",
+  benefit_precision_desc: "Identify exactly what’s missing from your prompt.",
   benefit_token_title: "Token Efficiency",
   benefit_token_desc: "No more wasted tokens on vague instructions. Every word counts.",
   benefit_clarity_title: "Clarity of Task",
@@ -63,6 +63,15 @@ const EN: Translations = {
   analyzing: "Analyzing...",
   press_enter_to_analyze: "Press Enter to analyze",
 
+  // Semantic analysis — loads in the background after the first result, then takes over.
+  semantic_loading: "Loading semantic analysis…",
+  semantic_active: "Semantic analysis active",
+  semantic_failed: "Semantic analysis unavailable — using pattern analysis.",
+  semantic_enable: "Enable semantic analysis",
+  semantic_enable_hint: "Downloads ~140 MB once. Analyses get more precise.",
+  semantic_refining: "Refining…",
+  improve_with_ai: "Improve this prompt",
+
   // ScoreCard component
   recommendations: "Recommendations",
   score_excellent: "Excellent",
@@ -83,7 +92,8 @@ const EN: Translations = {
   // Error Boundary
   error_boundary_title: "Something went wrong",
   error_boundary_message: "An unexpected error occurred in the application structure.",
-  error_boundary_retry: "Try again"
+  error_boundary_retry: "Try again",
+  error_generic: "Analysis failed. Please try again."
 };
 
 // Force English as per user request to unify the project
