@@ -8,6 +8,9 @@ dist-ssr/
 # Environment & secrets
 .env
 .env.*
+
+# .env.example is documentation, not a secret: keep it tracked
+!.env.example
 *.local
 
 # Logs
@@ -39,5 +42,7 @@ coverage/
 # LLM`s files
 .cursor/
 .kiro/
-.claude/
+# Everything in .claude/ is local config, EXCEPT the decision records
+.claude/*
+!.claude/adr/
 .opencode/
