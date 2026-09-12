@@ -10,7 +10,7 @@
 
 | # | Recurso | Onde | Estado | Custo | Reversível? |
 |---|---------|------|--------|-------|-------------|
-| 1 | **Cloudflare Pages `skelica`** | `https://skelica.pages.dev` (HTTP 200 verificado) | Ativo, servindo | R$ 0 (plano free) | ✅ recriável |
+| 1 | ~~Cloudflare Pages `skelica`~~ | ~~`https://skelica.pages.dev`~~ | ❌ **APAGADO em 2026-09-12** — HTTP 530 | R$ 0 | ✅ recriável (rollback §6) |
 | 2 | **GitHub Actions `deploy.yml`** | `.github/workflows/` | **Congelado nesta sessão** (só manual) | R$ 0 | ✅ revertível no git |
 | 3 | **GitHub Actions `e2e.yml`** | idem | **Congelado** | R$ 0 | ✅ |
 | 4 | **GitHub Actions `iac.yml`** | idem | **Congelado** | R$ 0 | ✅ |
@@ -26,18 +26,23 @@
 
 ## 2. Duas opções — escolha uma
 
-### Opção A — Congelar (recomendada para preservar o URL)
+### ⚠️ DECISÃO TOMADA: Opção B (apagar) — **executada em 2026-09-12**
 
-O site continua servindo, ninguém consegue reimplantar, e o URL `skelica.pages.dev` segue vivo para portfólio, currículo ou referência.
+As opções abaixo ficam como registro. A escolhida foi a **B**, e a execução está em §8.
+
+### Opção A — Congelar (preservaria o URL)
+
+O site continuaria servindo, ninguém conseguiria reimplantar, e o URL seguiria vivo para
+portfólio. **Não foi o caminho escolhido.**
 
 - **Custo:** R$ 0/mês
 - **Trabalho:** ~10 min (já feito no repo + desconectar a integração Git no painel)
 - **O que se perde:** nada funcional
 - **Quando escolher:** você quer o link vivo, ou não tem certeza ainda
 
-### Opção B — Desligar de verdade
+### Opção B — Desligar de verdade ✅ ESCOLHIDA E EXECUTADA
 
-Apaga o projeto do Cloudflare Pages. O URL deixa de responder.
+Apaga o projeto do Cloudflare Pages. O URL deixou de responder (HTTP 530).
 
 - **Custo:** R$ 0/mês (era R$ 0 de qualquer forma)
 - **Trabalho:** ~15 min
@@ -156,7 +161,7 @@ Verificar que morreu:
 
 ```bash
 curl -sS -o /dev/null -w "%{http_code}\n" https://skelica.pages.dev
-# Opção A: 200    Opção B: 404 / falha de DNS
+# Opção A: 200    Opção B: 530 (verificado após a execução)
 ```
 
 ### Fase 3 — Revogar credenciais
@@ -254,6 +259,57 @@ do nome), sujeito a disponibilidade do nome.
 | Data | Ação | Quem |
 |------|------|------|
 | 2026-09-12 | Projeto estacionado; deploys automáticos congelados no repo; documentação corrigida | sessão de encerramento |
-| _pendente_ | Fase 1 — desconectar integração Git do Pages | — |
-| _pendente_ | Fase 2 — escolher Opção A ou B | — |
-| _pendente_ | Fase 3 — revogar credenciais (§5) | — |
+| 2026-09-12 | Inspeção real: a integração Git apontava para `workbench`, não para `skelica` | sessão de encerramento |
+| 2026-09-12 | Verificado que nenhum Terraform/workflow gerencia o projeto → apagar é seguro | sessão de encerramento |
+| 2026-09-12 | **157 deployments purgados** e **projeto apagado** (Opção B) | sessão de encerramento |
+| _pendente_ | Revogar credenciais (§5) — **inclui a `ANTHROPIC_API_KEY`** | — |
+
+---
+
+## 8. Registro de execução (2026-09-12)
+
+Executado com um token `CLOUDFLARE_PAGES_TOKEN` válido (o `CLOUDFLARE_API_TOKEN` do `.zshrc` é
+válido mas não tem acesso a nenhuma conta — está escopado para AI Gateway).
+
+### O que a inspeção revelou
+
+| Campo | Valor real |
+|-------|-----------|
+| `source.type` | `github` — **a integração estava ativa** |
+| `source.config.repo_name` | **`workbench`** — não `skelica` |
+| `build_config.root_dir` | `skelica/frontend` |
+| Deploys existentes | **158** |
+| Mais recente | 2026-09-10 |
+
+Ou seja: **este repositório não publicava o site.** O `workbench` publicava, a partir de
+`skelica/frontend` — caminho que já não existe lá (o commit `2bfaf79` extraiu o skelica para o
+repositório standalone). A integração estava obsoleta **e quebrada**.
+
+### Verificação de segurança antes de apagar
+
+| Verificação | Resultado |
+|---|---|
+| Terraform do skelica no `workbench` | ❌ não existe mais |
+| Workflows de deploy do skelica no `workbench` | ❌ removidos |
+| `terraform.tfstate` do skelica | ❌ nenhum |
+| `cloudflare_pages_project` no `workbench` | só de outros produtos (3dseeit, hatch, breathing-timer, 3d-bussines) |
+
+**Conclusão: nada poderia recriar o projeto.** Apagar era seguro.
+
+### A execução
+
+1. `DELETE /pages/projects/skelica` → **recusado**: *"Your project has too many deployments to be
+   deleted"* (código 8000076).
+2. Purga dos deployments: **157 apagados**. O 158º é o *deployment de produção ativo*, que a API
+   protege explicitamente (*"You cannot delete the active production deployment"*). Ele não precisa
+   ser removido — a exclusão do projeto o leva junto.
+3. `DELETE /pages/projects/skelica` → **APAGADO**.
+4. Verificação: `skelica.pages.dev` → **HTTP 530**; o projeto sumiu da lista da conta
+   (restam `fourseveneight`, `hatch`, `kairoslist`, `keryx`, `portfolio-blog`).
+
+> **Lição operacional:** excluir um projeto Pages com muitos deployments exige purgar os
+> deployments antes. A API não faz isso sozinha, e o erro não é óbvio.
+
+### Pendente
+
+- [ ] Revogar as credenciais (§5) — **`ANTHROPIC_API_KEY` é prioridade máxima**

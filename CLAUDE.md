@@ -25,7 +25,7 @@ npm run preview          # Preview production build → http://localhost:4173
 
 For full regression suite: `TEST_TIER=full npm run test:prompts`
 
-E2E against production: `bash scripts/e2e.sh https://skelica.pages.dev`
+E2E against a local preview: `bash scripts/e2e.sh http://localhost:4173` (there is no production URL anymore — see Deployment)
 
 ## Architecture
 
@@ -96,7 +96,7 @@ Key `data-testid` attributes (do not rename without updating `e2e.sh`):
 CI layers — **all three workflows are `workflow_dispatch` only** (auto triggers were removed when
 the project was parked):
 - **`e2e.yml`** — browser smoke against `vite preview` or a given URL
-- **`deploy.yml`** — build + `wrangler pages deploy`, then a smoke job against `skelica.pages.dev`
+- **`deploy.yml`** — build + `wrangler pages deploy`, then a smoke job. **The Pages project was deleted on 2026-09-12**, so this cannot run until one is recreated
 - **`iac.yml`** — Terraform plan. **The state is empty, so `destroy` removes nothing and `apply` will
   try to create a duplicate.** Do not use it to decommission; see `docs/project/decommission-infra.md`.
 
@@ -118,14 +118,14 @@ When editing the default prompt, always verify the grade is A or B by running th
 
 ## Deployment
 
-Static app deployed to Cloudflare Pages — `https://skelica.pages.dev`. **The project is parked and deploys are manual only** (`workflow_dispatch`); see `docs/project/decommission-infra.md`. There is no `vercel.json` or `netlify.toml` in this repo, despite older docs claiming otherwise.
+**Decommissioned.** The static app was deployed to Cloudflare Pages at `skelica.pages.dev`; that project was **deleted on 2026-09-12** and the URL now returns HTTP 530. The repo is parked with deploys manual-only. To publish again, follow the rollback in `docs/project/decommission-infra.md` §6. There is no `vercel.json` or `netlify.toml` here, despite older docs claiming otherwise.
 
 ---
 
 ## Project Status
 
 - **Classificação:** PARQUE
-- **Objetivo:** Analisador de anatomia de prompts — detecta 9 componentes estruturais (regex multilíngue + embeddings como autoridade), calcula scores em 8 dimensões, e faz handoff do prompt anotado para ChatGPT/Claude. App client-side estática deployada no Cloudflare Pages. Otimização por LLM existe em `llm/` mas não está ligada à UI.
-- **Próximas ações:** **nenhuma de desenvolvimento.** O projeto está em parque; só reabrir se uma das condições falsificáveis de `docs/project/decision-parked.md` §4 se cumprir. Infra a descomissionar em `docs/project/decommission-infra.md`.
+- **Objetivo:** Analisador de anatomia de prompts — detecta 9 componentes estruturais (regex multilíngue + embeddings como autoridade), calcula scores em 8 dimensões, e faz handoff do prompt anotado para ChatGPT/Claude. App client-side estática; o projeto do Cloudflare Pages foi **apagado em 2026-09-12**. Otimização por LLM existe em `llm/` mas não está ligada à UI.
+- **Próximas ações:** **nenhuma.** Projeto em parque e infraestrutura descomissionada. Só reabrir se uma condição falsificável de `docs/project/decision-parked.md` §4 se cumprir. **Pendência única: revogar as credenciais** (`decommission-infra.md` §5), incluindo a `ANTHROPIC_API_KEY`.
 - **Decisões recentes:** Motor reescrito para ser invariante de idioma (união dos 3 conjuntos de padrões); scorer tornado agnóstico de idioma (viés PT↔EN de 0,248 → 0,077); Fase 2 concluída (semântico autoritativo, carregado em background); dataset corrigido e recalibrado; ESLint destravado e limpo. Ver `docs/project/analysis-engine-architecture.md`.
 - **Última revisão:** 2026-09-12

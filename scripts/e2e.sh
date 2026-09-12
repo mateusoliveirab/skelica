@@ -2,7 +2,8 @@
 # E2E smoke test for skelica using agent-browser
 # Usage: ./scripts/e2e.sh [URL]
 #   URL defaults to http://localhost:4173 (vite preview)
-#   Set to https://skelica.pages.dev for production smoke
+#   The Cloudflare Pages project was deleted on 2026-09-12: there is no production URL.
+#   Point this at a local preview instead, e.g. http://localhost:4173
 
 set -euo pipefail
 

@@ -8,7 +8,7 @@
 
 ## A decisão
 
-O Skelica fica **no ar, funcionando e sem manutenção ativa**. O desenvolvimento para aqui. Nenhum esforço novo de engenharia, produto ou marketing é investido até que uma das condições de reabertura (§4) se cumpra.
+O Skelica é **descomissionado e sem manutenção ativa**. O site saiu do ar em 2026-09-12 e não há mais infraestrutura rodando (ver `decommission-infra.md`). O código permanece neste repositório. O desenvolvimento para aqui. Nenhum esforço novo de engenharia, produto ou marketing é investido até que uma das condições de reabertura (§4) se cumpra.
 
 Não é um abandono por bug ou por fracasso técnico. É uma decisão de alocação: **manter isso como foco ativo consome o poder de escolha do fundador, e o retorno esperado não paga esse custo.**
 
@@ -27,7 +27,7 @@ O produto está em bom estado técnico — melhor do que estava quando esta sess
 | ESLint | quebrado (crash) | **limpo** |
 | Código morto | 7 módulos | **0** |
 
-Deploy estático no Cloudflare Pages, custo de infraestrutura ~R$ 0. O motor é multilíngue, tem dataset dourado de 83 prompts e o semântico é autoritativo sobre o regex.
+Estava em deploy estático no Cloudflare Pages, custo de infraestrutura ~R$ 0 — **projeto apagado em 2026-09-12**. O motor é multilíngue, tem dataset dourado de 83 prompts e o semântico é autoritativo sobre o regex; roda localmente com `npm run dev`.
 
 **O que não existe:** contas, pagamentos, analytics configurado, backend, e — o mais importante — **nenhuma evidência de que alguém queira pagar.**
 

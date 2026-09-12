@@ -2,6 +2,10 @@
 
 **Data:** 2026-09-12
 **Escopo:** auditoria do código em `frontend/` (não da documentação, que está desatualizada) + análise de mercado + direção recomendada.
+> **Nota histórica (2026-09-12):** este é um registro do momento da auditoria. O app foi
+> descomissionado depois — `skelica.pages.dev` não responde mais e o projeto está em parque
+> (`decision-parked.md`). As observações de código seguem válidas; as de produção, não.
+
 **Método:** leitura do código, `npm run build`/`vitest`, inspeção do bundle em `frontend/dist/`, checagem do site em produção (`skelica.pages.dev`) e pesquisa de mercado.
 
 ---

@@ -173,7 +173,7 @@ Idioma detectado automaticamente pelo conteúdo do prompt.
 
 ## Deploy
 
-App estático, hospedado em **Cloudflare Pages** (`https://skelica.pages.dev`).
+App estático. Estava hospedado em **Cloudflare Pages** (`https://skelica.pages.dev`), mas o projeto foi **apagado em 2026-09-12** — o URL responde HTTP 530.
 
 ⚠️ **Projeto em parque:** os deploys automáticos estão desligados (só `workflow_dispatch`).
 Não há `vercel.json` nem `netlify.toml` neste repositório. Para congelar ou apagar a

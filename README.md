@@ -1,7 +1,8 @@
 # Skelica — Prompt Anatomy & Optimizer
 
-> **Status: PARQUE (parked).** O app continua no ar e funcional em
-> [skelica.pages.dev](https://skelica.pages.dev), mas **não está em desenvolvimento ativo**.
+> **Status: PARQUE (parked) e descomissionado.** O site **saiu do ar em 2026-09-12**
+> (`skelica.pages.dev` responde HTTP 530; o projeto do Cloudflare Pages foi apagado).
+> O código continua aqui e roda localmente com `npm run dev`. **Não está em desenvolvimento ativo**.
 > O motivo da decisão, e o que justificaria reabrir, está em
 > [`docs/project/decision-parked.md`](./docs/project/decision-parked.md). Deploys automáticos
 > foram desligados; a infraestrutura pendente de descomissionamento está em
@@ -121,7 +122,10 @@ cp .env.example .env
 
 ## Deployment
 
-Deployed to **Cloudflare Pages** at https://skelica.pages.dev via GitHub Actions.
+**Decommissioned.** The Cloudflare Pages project was deleted on 2026-09-12 and
+`skelica.pages.dev` no longer resolves. See
+[docs/project/decommission-infra.md](./docs/project/decommission-infra.md) for the teardown
+record and the rollback if you ever want to publish again.
 
 Push to `main` with changes in `frontend/**` triggers `deploy.yml` automatically.
 

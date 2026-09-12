@@ -1,9 +1,11 @@
 # Skelica — Status
 
 **Última atualização:** 2026-09-12
-**Classificação:** PARQUE — no ar, funcional, sem desenvolvimento ativo.
+**Classificação:** PARQUE — **descomissionado em 2026-09-12** (o site não está mais no ar).
 
-> **Leia primeiro:** [`decision-parked.md`](./decision-parked.md) — por que o desenvolvimento parou e quais condições falsificáveis justificariam reabrir. Este documento descreve apenas **o que existe hoje**.
+> **Leia primeiro:** [`decision-parked.md`](./decision-parked.md) — por que o desenvolvimento parou e quais condições falsificáveis justificariam reabrir. O encerramento da infraestrutura está em [`decommission-infra.md`](./decommission-infra.md).
+>
+> **O site foi apagado.** `skelica.pages.dev` responde HTTP 530. O código continua neste repositório e roda localmente com `npm run dev`; para publicar de novo, ver o rollback em `decommission-infra.md` §6.
 
 ---
 
