@@ -85,6 +85,40 @@ já está satisfeita.
 > houvesse, a Cloudflare teria compilado `main`. Não é prova (builds podem atrasar), então
 > confirme com o script ou no painel.
 
+### ⚠️ DESCOBERTA (inspeção real, 2026-09-12): a integração aponta para OUTRO repositório
+
+A inspeção foi executada com um token válido e revelou que o projeto Pages **não** observa este
+repositório:
+
+| Campo | Valor |
+|-------|-------|
+| `source.type` | `github` — **integração ativa** |
+| `source.config.repo_name` | **`workbench`** (não `skelica`) |
+| `source.config.production_branch` | `main` |
+| `build_config.root_dir` | **`skelica/frontend`** |
+| `deployments_enabled` | `true` |
+| Últimos 6 deploys | todos `tipo=github`, o mais recente em **2026-09-10** |
+
+Consequências que mudam o plano:
+
+1. **Este repositório não publica o site.** Commits em `skelica` não geram deploy — foi por isso
+   que o bundle em produção não mudou depois do push de encerramento. A inferência anterior
+   ("provavelmente não há integração Git") estava **errada**: a integração existe, mas observa
+   outro repositório.
+2. **Pushes em `workbench@main`, sob `skelica/frontend`, publicam o site em produção** —
+   contornando integralmente este repositório (os workflows congelados, os testes, o dataset).
+3. Portanto **congelar os workflows daqui foi inócuo para essa rota de deploy**. A Fase 1 não é
+   opcional: é o único controle que fecha essa porta.
+4. O `workbench` também contém `.github/workflows/terraform-destroy.yml` e `statusline-iac.yml`,
+   que usam `CLOUDFLARE_API_TOKEN` com `terraform apply -auto-approve` e `destroy`. Ou seja, o
+   Terraform que de fato mexe em infraestrutura provavelmente vive lá — coerente com o
+   `terraform.tfstate` vazio deste repositório.
+
+**Decisão necessária (só o dono sabe):** a ligação é **obsoleta** (o `skelica` foi extraído do
+`workbench` e o projeto nunca foi re-apontado) ou **intencional** (o `workbench` continua sendo a
+fonte de build)? Se obsoleta, desconectar. Se intencional, re-apontar para `mateusoliveirab/skelica`
+— e então sim os workflows deste repositório passam a valer.
+
 ### Fase 1 — Desconectar a integração Git do Cloudflare Pages ⚠️ **passo crítico**
 
 **Isto é o que a Fase 0 NÃO resolve.** O `iac/pages.tf` descreve um projeto Pages com
